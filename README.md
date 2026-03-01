@@ -4,13 +4,22 @@ An AI-powered resume evaluation system that compares candidate resumes against j
 
 ## 🖼️ Screenshots
 
-### Home Page - Resume Upload
+### Home Page - Resume Upload Form
 ![Home Page](screenshots/home.png)
+
+### Resume Upload with Job Description
+![Upload Form Filled](screenshots/resume-upload-filled.png)
 
 ### Candidates Dashboard
 ![Candidates Dashboard](screenshots/candidates.png)
 
-### Candidate Profile Detail
+### Evaluation Results - Summary & Tier
+![Results Summary](screenshots/results-summary.png)
+
+### Evaluation Results - Multi-dimensional Scores
+![Results Scores](screenshots/results-scores.png)
+
+### Candidate Profile - Full Details
 ![Candidate Profile](screenshots/candidate-profile.png)
 
 ## 🎯 Features
