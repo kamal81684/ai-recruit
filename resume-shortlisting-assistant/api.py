@@ -15,7 +15,7 @@ app = Flask(__name__)
 
 # Configure CORS for Next.js frontend - Simple setup
 CORS(app,
-     resources={r"/api/*": {"origins": "*"}},
+     resources={r"/*": {"origins": "*"}},
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
      allow_headers=["Content-Type", "Authorization", "Cache-Control"],
      supports_credentials=True,
