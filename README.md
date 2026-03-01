@@ -61,6 +61,72 @@ kamal-assignment/
 
 - **Explainability:** Detailed explanations for every score
 
+## 🐳 Docker Deployment
+
+### Using Docker Compose (Recommended)
+
+**Quick start:**
+```bash
+docker-compose up -d
+```
+
+This will start both the backend and frontend containers.
+
+**Access the application:**
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:5001
+
+**Stop the containers:**
+```bash
+docker-compose down
+```
+
+### Manual Docker Build
+
+**Backend:**
+```bash
+cd resume-shortlisting-assistant
+docker build -t ai-recruit-backend .
+docker run -p 5001:5001 \
+  -e GROQ_API_KEY=your_key_here \
+  -e DATABASE_URL=your_db_url \
+  ai-recruit-backend
+```
+
+**Frontend:**
+```bash
+cd frontend
+docker build -t ai-recruit-frontend .
+docker run -p 3000:3000 ai-recruit-frontend
+```
+
+### GitHub Container Registry
+
+Images are automatically built and pushed to GitHub Container Registry:
+
+- **Backend:** `ghcr.io/kamal81684/ai-recruit-backend:latest`
+- **Frontend:** `ghcr.io/kamal81684/ai-recruit-frontend:latest`
+
+**Pull and run:**
+```bash
+# Pull images
+docker pull ghcr.io/kamal81684/ai-recruit-backend:latest
+docker pull ghcr.io/kamal81684/ai-recruit-frontend:latest
+
+# Run with Docker Compose
+docker-compose up -d
+```
+
+### CI/CD Pipeline
+
+GitHub Actions automatically:
+1. Runs tests on every push
+2. Builds Docker images for multiple architectures (amd64, arm64)
+3. Pushes to GitHub Container Registry
+4. Triggers on push to `main` branch
+
+See `.github/workflows/` for pipeline configurations.
+
 ## Quick Start
 
 ### Option 1: Using Test Script (Verify Integration First)
