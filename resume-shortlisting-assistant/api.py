@@ -196,6 +196,142 @@ def delete_candidate(candidate_id):
     except Exception as e:
         return jsonify({'error': f'Failed to delete candidate: {str(e)}'}), 500
 
+@app.route('/api/candidates/<int:candidate_id>/interview-questions', methods=['GET'])
+def get_interview_questions(candidate_id):
+    """Get interview questions for a specific candidate"""
+    try:
+        questions = db.get_interview_questions(candidate_id)
+        return jsonify({'questions': questions}), 200
+
+    except Exception as e:
+        return jsonify({'error': f'Failed to fetch interview questions: {str(e)}'}), 500
+
+@app.route('/api/candidates/<int:candidate_id>/interview-questions', methods=['POST'])
+def generate_interview_questions(candidate_id):
+    """
+    Generate AI-powered interview questions for a candidate.
+    This will replace any existing questions for this candidate.
+    """
+    try:
+        # Check API key
+        if not os.getenv('GROQ_API_KEY'):
+            return jsonify({'error': 'GROQ_API_KEY environment variable is missing'}), 500
+
+        # Get candidate data
+        candidate = db.get_candidate_by_id(candidate_id)
+        if not candidate:
+            return jsonify({'error': 'Candidate not found'}), 404
+
+        # Delete existing questions
+        db.delete_interview_questions(candidate_id)
+
+        # Generate AI questions based on candidate's profile and job description
+        from groq import Groq
+        import json
+
+        client = Groq(api_key=os.getenv('GROQ_API_KEY'))
+
+        prompt = f"""You are an expert technical interviewer. Based on the following candidate profile and job description, generate 8-10 targeted interview questions.
+
+CANDIDATE PROFILE:
+Name: {candidate.get('name', 'Unknown')}
+Current Role: {candidate.get('current_role', 'Unknown')}
+Skills: {candidate.get('skills', 'Not specified')}
+Experience: {candidate.get('experience_years', 'Unknown')} years
+Education: {candidate.get('education', 'Not specified')}
+
+JOB DESCRIPTION:
+{candidate.get('job_description', 'Not specified')[:1000]}
+
+CANDIDATE TIER: {candidate.get('tier', 'Unknown')}
+EVALUATION SUMMARY: {candidate.get('summary', '')[:500]}
+
+Generate questions that:
+1. Test technical depth in their claimed skills
+2. Explore their achievements and impact mentioned in the resume
+3. Assess cultural fit and soft skills
+4. Include both behavioral and technical questions
+5. Are tailored to their tier level (harder questions for Tier A, foundational for Tier C)
+
+Return ONLY a valid JSON array with this exact structure:
+[
+  {{"question": "question text here", "category": "Technical|Behavioral|Cultural"}}
+]
+
+Ensure the JSON is valid and properly formatted."""
+
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert technical interviewer. Always respond with valid JSON only."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            model="llama-3.3-70b-versatile",
+            temperature=0.5,
+            max_tokens=2048,
+            response_format={"type": "json_object"}
+        )
+
+        response_text = chat_completion.choices[0].message.content
+
+        # Parse the response
+        try:
+            questions_data = json.loads(response_text)
+
+            # Handle different response formats
+            if isinstance(questions_data, list):
+                questions_list = questions_data
+            elif isinstance(questions_data, dict) and 'questions' in questions_data:
+                questions_list = questions_data['questions']
+            else:
+                questions_list = []
+
+            # Save questions to database
+            saved_questions = []
+            for q in questions_list:
+                if isinstance(q, dict) and 'question' in q:
+                    category = q.get('category', 'General')
+                    question_id = db.save_interview_question(candidate_id, q['question'], category)
+                    if question_id:
+                        saved_questions.append({
+                            'id': question_id,
+                            'candidate_id': candidate_id,
+                            'question': q['question'],
+                            'category': category,
+                            'created_at': None
+                        })
+
+            return jsonify({'questions': saved_questions}), 200
+
+        except json.JSONDecodeError as e:
+            print(f"JSON decode error: {e}")
+            print(f"Response text: {response_text}")
+            # Fallback: create generic questions
+            fallback_questions = [
+                {"question": "Can you walk me through your most challenging technical project?", "category": "Technical"},
+                {"question": "Describe a time you had to learn a new technology quickly. How did you approach it?", "category": "Behavioral"},
+                {"question": "What do you consider your biggest professional achievement?", "category": "Behavioral"},
+                {"question": "How do you handle disagreements with team members on technical decisions?", "category": "Cultural"},
+            ]
+            for q in fallback_questions:
+                question_id = db.save_interview_question(candidate_id, q['question'], q['category'])
+                q['id'] = question_id
+                q['candidate_id'] = candidate_id
+                q['created_at'] = None
+
+            return jsonify({'questions': fallback_questions}), 200
+
+    except Exception as e:
+        print(f"Error generating interview questions: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to generate interview questions: {str(e)}'}), 500
+
 @app.route('/api/statistics', methods=['GET'])
 def get_statistics():
     """Get database statistics"""
@@ -343,6 +479,92 @@ def delete_job_post(job_id):
 
     except Exception as e:
         return jsonify({'error': f'Failed to delete job post: {str(e)}'}), 500
+
+@app.route('/api/analytics', methods=['GET'])
+def get_analytics():
+    """Get comprehensive analytics data"""
+    try:
+        cursor = db.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        # Candidates by tier
+        cursor.execute("""
+            SELECT tier, COUNT(*) as count
+            FROM candidates
+            GROUP BY tier
+            ORDER BY tier
+        """)
+        by_tier = {row['tier']: row['count'] for row in cursor.fetchall() if row.get('tier')}
+
+        # Candidates over time (last 30 days)
+        cursor.execute("""
+            SELECT DATE(created_at) as date, COUNT(*) as count
+            FROM candidates
+            WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
+            GROUP BY DATE(created_at)
+            ORDER BY date
+        """)
+        candidates_over_time = [(row['date'].strftime('%Y-%m-%d'), row['count']) for row in cursor.fetchall()]
+
+        # Active job posts count
+        cursor.execute("SELECT COUNT(*) as count FROM job_posts WHERE status = 'active'")
+        active_jobs = cursor.fetchone()['count']
+
+        # Average scores by tier
+        cursor.execute("""
+            SELECT tier,
+                   AVG(exact_match_score) as avg_exact,
+                   AVG(similarity_match_score) as avg_similarity,
+                   AVG(achievement_impact_score) as avg_impact,
+                   AVG(ownership_score) as avg_ownership
+            FROM candidates
+            GROUP BY tier
+            ORDER BY tier
+        """)
+        avg_scores_by_tier = {}
+        for row in cursor.fetchall():
+            if row.get('tier'):
+                avg_scores_by_tier[row['tier']] = {
+                    'exact_match': float(round(row['avg_exact'], 2)) if row.get('avg_exact') else 0,
+                    'similarity_match': float(round(row['avg_similarity'], 2)) if row.get('avg_similarity') else 0,
+                    'achievement_impact': float(round(row['avg_impact'], 2)) if row.get('avg_impact') else 0,
+                    'ownership': float(round(row['avg_ownership'], 2)) if row.get('avg_ownership') else 0,
+                }
+
+        # Top locations
+        cursor.execute("""
+            SELECT location, COUNT(*) as count
+            FROM candidates
+            WHERE location IS NOT NULL AND location != ''
+            GROUP BY location
+            ORDER BY count DESC
+            LIMIT 10
+        """)
+        top_locations = [(row['location'], row['count']) for row in cursor.fetchall()]
+
+        # Recent candidates (last 7 days)
+        cursor.execute("""
+            SELECT id, name, email, tier, created_at
+            FROM candidates
+            WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
+            ORDER BY created_at DESC
+            LIMIT 10
+        """)
+        recent_candidates = [dict(row) for row in cursor.fetchall()]
+
+        cursor.close()
+
+        return jsonify({
+            'by_tier': by_tier,
+            'candidates_over_time': candidates_over_time,
+            'active_jobs': active_jobs,
+            'avg_scores_by_tier': avg_scores_by_tier,
+            'top_locations': top_locations,
+            'recent_candidates': recent_candidates,
+            'total_candidates': sum(by_tier.values()),
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': f'Failed to fetch analytics: {str(e)}'}), 500
 
 @app.route('/api/jobs/generate-ai', methods=['POST'])
 def generate_ai_job_post():

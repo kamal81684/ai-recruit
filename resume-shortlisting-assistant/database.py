@@ -86,6 +86,17 @@ class Database:
                 )
             """)
 
+            # Create interview_questions table
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS interview_questions (
+                    id SERIAL PRIMARY KEY,
+                    candidate_id INTEGER REFERENCES candidates(id) ON DELETE CASCADE,
+                    question TEXT NOT NULL,
+                    category VARCHAR(100),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             # Create index for faster queries
             self.cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_candidates_tier ON candidates(tier)
@@ -482,6 +493,56 @@ class Database:
 
         except Exception as e:
             print(f"❌ Failed to delete job post: {e}")
+            self.conn.rollback()
+            return False
+
+    def save_interview_question(
+        self,
+        candidate_id: int,
+        question: str,
+        category: str = None
+    ) -> Optional[int]:
+        """Save an interview question for a candidate"""
+        try:
+            self.cursor.execute("""
+                INSERT INTO interview_questions (candidate_id, question, category)
+                VALUES (%s, %s, %s)
+                RETURNING id
+            """, (candidate_id, question, category))
+
+            question_id = self.cursor.fetchone()['id']
+            self.conn.commit()
+            return question_id
+        except Exception as e:
+            print(f"❌ Failed to save interview question: {e}")
+            self.conn.rollback()
+            return None
+
+    def get_interview_questions(self, candidate_id: int) -> List[Dict]:
+        """Get all interview questions for a candidate"""
+        try:
+            cursor = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute("""
+                SELECT id, candidate_id, question, category, created_at
+                FROM interview_questions
+                WHERE candidate_id = %s
+                ORDER BY id
+            """, (candidate_id,))
+            questions = cursor.fetchall()
+            cursor.close()
+            return [dict(q) for q in questions]
+        except Exception as e:
+            print(f"❌ Failed to fetch interview questions: {e}")
+            return []
+
+    def delete_interview_questions(self, candidate_id: int) -> bool:
+        """Delete all interview questions for a candidate"""
+        try:
+            self.cursor.execute("DELETE FROM interview_questions WHERE candidate_id = %s", (candidate_id,))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"❌ Failed to delete interview questions: {e}")
             self.conn.rollback()
             return False
 

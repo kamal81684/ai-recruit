@@ -176,10 +176,10 @@ export default function Home() {
           </div>
           <div className="flex flex-1 justify-end gap-6 items-center">
             <nav className="hidden lg:flex items-center gap-8">
-              <a className="text-slate-600 hover:text-primary transition-colors text-sm font-medium" href="/candidates">Dashboard</a>
-              <a className="text-slate-600 hover:text-primary transition-colors text-sm font-semibold border-b-2 border-transparent hover:border-primary py-1" href="/candidates">Candidates</a>
+              <a className="text-slate-600 hover:text-primary transition-colors text-sm font-medium" href="/dashboard">Dashboard</a>
+              <a className="text-slate-600 hover:text-primary transition-colors text-sm font-medium" href="/candidates">Candidates</a>
               <a className="text-slate-600 hover:text-primary transition-colors text-sm font-medium" href="/jobs">Job Posts</a>
-              <a className="text-slate-600 hover:text-primary transition-colors text-sm font-medium" href="#">Analytics</a>
+              <a className="text-slate-600 hover:text-primary transition-colors text-sm font-medium" href="/analytics">Analytics</a>
             </nav>
             <div className="h-10 w-[1px] bg-slate-200 hidden lg:block mx-2"></div>
             <div className="bg-slate-200 bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10 border border-slate-200" style={{ backgroundImage: 'url("https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=100&h=100")' }}></div>
