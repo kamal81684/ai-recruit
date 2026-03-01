@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Add New Candidate - AI Recruit</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              colors: {
+                "primary": "#135bec",
+                "background-light": "#f6f6f8",
+                "background-dark": "#101622",
+              },
+              fontFamily: {
+                "display": ["Inter"]
+              },
+              borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+            },
+          },
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .material-symbols-outlined { font-size: 24px; }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display">
+<div class="relative flex h-auto min-screen w-full flex-col">
+<div class="layout-container flex h-full grow flex-col">
+<!-- Top Navigation Bar -->
+<header class="flex items-center justify-between whitespace-nowrap border-b border-solid border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6 lg:px-10 py-3">
+<div class="flex items-center gap-8">
+<div class="flex items-center gap-4 text-primary">
+<div class="size-8 bg-primary rounded-lg flex items-center justify-center text-white">
+<span class="material-symbols-outlined">cognition</span>
+</div>
+<h2 class="text-slate-900 dark:text-slate-100 text-lg font-bold leading-tight tracking-tight">AI Recruit</h2>
+</div>
+<label class="hidden md:flex flex-col min-w-40 h-10 max-w-64">
+<div class="flex w-full flex-1 items-stretch rounded-lg h-full">
+<div class="text-slate-500 flex border-none bg-slate-100 dark:bg-slate-800 items-center justify-center pl-4 rounded-l-lg">
+<span class="material-symbols-outlined">search</span>
+</div>
+<input class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-slate-900 dark:text-slate-100 focus:outline-0 focus:ring-0 border-none bg-slate-100 dark:bg-slate-800 focus:border-none h-full placeholder:text-slate-500 px-4 rounded-l-none border-l-0 pl-2 text-base font-normal" placeholder="Search candidates..." value=""/>
+</div>
+</label>
+</div>
+<div class="flex flex-1 justify-end gap-6 items-center">
+<nav class="hidden lg:flex items-center gap-8">
+<a class="text-slate-600 dark:text-slate-400 hover:text-primary transition-colors text-sm font-medium" href="#">Dashboard</a>
+<a class="text-primary text-sm font-semibold border-b-2 border-primary py-1" href="#">Candidates</a>
+<a class="text-slate-600 dark:text-slate-400 hover:text-primary transition-colors text-sm font-medium" href="#">Job Posts</a>
+<a class="text-slate-600 dark:text-slate-400 hover:text-primary transition-colors text-sm font-medium" href="#">Analytics</a>
+</nav>
+<div class="h-10 w-[1px] bg-slate-200 dark:bg-slate-800 hidden lg:block mx-2"></div>
+<div class="bg-slate-200 dark:bg-slate-800 bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10 border border-slate-200 dark:border-slate-700" data-alt="User profile avatar placeholder" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuAoNqz9uFo98sa6CwiEU1p-TcdGLr78c8Cot_ScJTeGAf1c8ZKXyqte5IekA_fce2rEIZWNbY7qW3VAf24h3G6s7BnXjTHkRK3lpfRzVEfpmpnvwxcJ5dkgVAI-YwDV2Cg5nPYStEWSoTIPt3rPl9AX1NU8gHwnucCzRj8qquZhayTSzVSNii4mLbVKkGGu3tpGGCThEfz_vDUZ_4NzDw3dBq33o73Gv4HUBNiwRxiM_tSbF1Gd9TPg5ngAWwPqbw6CpABRSUNz-Ll3");'></div>
+</div>
+</header>
+<main class="flex-1 flex flex-col items-center">
+<div class="w-full max-w-5xl px-6 py-8">
+<!-- Breadcrumbs -->
+<div class="flex items-center gap-2 mb-8 text-slate-500 text-sm font-medium">
+<a class="hover:text-primary" href="#">Dashboard</a>
+<span class="material-symbols-outlined text-xs">chevron_right</span>
+<a class="hover:text-primary" href="#">Candidates</a>
+<span class="material-symbols-outlined text-xs">chevron_right</span>
+<span class="text-slate-900 dark:text-slate-100">Add New Candidate</span>
+</div>
+<!-- Page Header -->
+<div class="mb-10">
+<h1 class="text-4xl font-black text-slate-900 dark:text-slate-100 tracking-tight mb-3">Add New Candidate</h1>
+<p class="text-slate-600 dark:text-slate-400 text-lg max-w-2xl leading-relaxed">
+                        Upload a resume to automatically extract professional details. Our AI will match the candidate's skills against your job requirements.
+                    </p>
+</div>
+<!-- Content Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+<!-- Left Column: Resume Upload -->
+<div class="lg:col-span-2 flex flex-col gap-6">
+<div class="bg-white dark:bg-slate-900 p-8 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+<div class="flex items-center gap-2 mb-6">
+<span class="material-symbols-outlined text-primary">description</span>
+<h2 class="text-xl font-bold text-slate-900 dark:text-slate-100">Resume Upload</h2>
+</div>
+<!-- Drag & Drop Zone -->
+<div class="relative border-2 border-dashed border-primary/30 dark:border-primary/20 bg-primary/5 rounded-xl p-12 transition-all hover:bg-primary/10 hover:border-primary group flex flex-col items-center justify-center text-center cursor-pointer">
+<div class="size-16 bg-primary/10 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-primary text-4xl">upload_file</span>
+</div>
+<h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">Drag and drop resume here</h3>
+<p class="text-slate-500 dark:text-slate-400 mb-6 text-sm">Supported formats: PDF, DOCX, TXT (Max 10MB)</p>
+<button class="bg-primary text-white px-6 py-2.5 rounded-lg font-bold hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20">
+                                    Browse Files
+                                </button>
+<input class="absolute inset-0 opacity-0 cursor-pointer" type="file"/>
+</div>
+<!-- List of Uploaded (Simulated) -->
+<div class="mt-6 flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
+<span class="material-symbols-outlined text-red-500">picture_as_pdf</span>
+<div class="flex-1">
+<p class="text-sm font-medium text-slate-900 dark:text-slate-100 leading-none">candidate_resume_v2.pdf</p>
+<p class="text-xs text-slate-500 mt-1">245 KB • Ready to analyze</p>
+</div>
+<button class="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors">
+<span class="material-symbols-outlined text-slate-400 text-lg">close</span>
+</button>
+</div>
+</div>
+<!-- Job Description Section -->
+<div class="bg-white dark:bg-slate-900 p-8 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+<div class="flex items-center gap-2 mb-6">
+<span class="material-symbols-outlined text-primary">work_outline</span>
+<h2 class="text-xl font-bold text-slate-900 dark:text-slate-100">Target Role (Optional)</h2>
+</div>
+<p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Provide a job description to get a specific match score and AI-generated interview questions.</p>
+<textarea class="w-full h-48 rounded-xl border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-4 text-slate-900 dark:text-slate-100 focus:ring-primary focus:border-primary transition-all placeholder:text-slate-400" placeholder="Paste the job description here or select an existing job post..."></textarea>
+<div class="mt-4 flex justify-between items-center">
+<button class="flex items-center gap-2 text-primary text-sm font-semibold hover:underline">
+<span class="material-symbols-outlined text-sm">link</span>
+                                    Select from active Job Posts
+                                </button>
+<span class="text-xs text-slate-400 font-medium">0 words entered</span>
+</div>
+</div>
+</div>
+<!-- Right Column: Settings & Actions -->
+<div class="lg:col-span-1 flex flex-col gap-6">
+<div class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+<h3 class="font-bold text-slate-900 dark:text-slate-100 mb-4">Analysis Settings</h3>
+<div class="space-y-4">
+<div class="flex items-center justify-between">
+<label class="text-sm font-medium text-slate-700 dark:text-slate-300">Detailed Skills Gap</label>
+<div class="relative inline-block w-10 align-middle select-none">
+<input checked="" class="sr-only peer" id="toggle-skills" type="checkbox"/>
+<div class="block bg-slate-200 dark:bg-slate-700 w-10 h-6 rounded-full"></div>
+<div class="absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition peer-checked:translate-x-full peer-checked:bg-primary"></div>
+</div>
+</div>
+<div class="flex items-center justify-between">
+<label class="text-sm font-medium text-slate-700 dark:text-slate-300">Generate Interview Qs</label>
+<div class="relative inline-block w-10 align-middle select-none">
+<input checked="" class="sr-only peer" id="toggle-questions" type="checkbox"/>
+<div class="block bg-slate-200 dark:bg-slate-700 w-10 h-6 rounded-full"></div>
+<div class="absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition peer-checked:translate-x-full peer-checked:bg-primary"></div>
+</div>
+</div>
+<div class="flex items-center justify-between">
+<label class="text-sm font-medium text-slate-700 dark:text-slate-300">Anonymize Profile</label>
+<div class="relative inline-block w-10 align-middle select-none">
+<input class="sr-only peer" id="toggle-anon" type="checkbox"/>
+<div class="block bg-slate-200 dark:bg-slate-700 w-10 h-6 rounded-full"></div>
+<div class="absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition peer-checked:translate-x-full peer-checked:bg-primary"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Big Action Area -->
+<div class="bg-primary/5 dark:bg-primary/10 p-6 rounded-xl border border-primary/20 flex flex-col gap-4">
+<button class="w-full bg-primary text-white h-14 rounded-xl font-bold text-lg flex items-center justify-center gap-2 hover:bg-primary/90 transition-all shadow-xl shadow-primary/20 active:scale-[0.98]">
+<span class="material-symbols-outlined">auto_awesome</span>
+                                Analyze with AI
+                            </button>
+<p class="text-center text-xs text-slate-500 dark:text-slate-400">
+                                This will use 1 analysis credit. You have 42 credits remaining.
+                            </p>
+</div>
+<!-- Information Card -->
+<div class="bg-slate-100 dark:bg-slate-800/50 p-6 rounded-xl flex items-start gap-4">
+<span class="material-symbols-outlined text-primary">info</span>
+<div class="flex-1">
+<h4 class="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">Quick Tip</h4>
+<p class="text-sm text-slate-600 dark:text-slate-400 leading-snug">
+                                    Analysis usually takes 10-15 seconds. We'll automatically save the candidate to your dashboard once complete.
+                                </p>
+</div>
+</div>
+</div>
+</div>
+<!-- Footer Links -->
+<div class="mt-12 flex flex-col md:flex-row justify-between items-center py-6 border-t border-slate-200 dark:border-slate-800 gap-4">
+<p class="text-slate-500 text-sm">© 2024 AI Recruit. Powered by GPT-4 Advanced Reasoning.</p>
+<div class="flex gap-6">
+<a class="text-slate-500 hover:text-primary text-sm transition-colors" href="#">Privacy Policy</a>
+<a class="text-slate-500 hover:text-primary text-sm transition-colors" href="#">Help Center</a>
+<a class="text-slate-500 hover:text-primary text-sm transition-colors" href="#">System Status</a>
+</div>
+</div>
+</div>
+</main>
+</div>
+</div>
+</body></html>

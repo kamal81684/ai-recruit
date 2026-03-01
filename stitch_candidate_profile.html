@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#135bec",
+                        "background-light": "#f6f6f8",
+                        "background-dark": "#101622",
+                    },
+                    fontFamily: {
+                        "display": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<title>Candidate Deep-Dive | RecruitAI</title>
+</head>
+<body class="font-display bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 antialiased">
+<div class="relative flex min-h-screen w-full flex-col overflow-x-hidden">
+<div class="layout-container flex h-full grow flex-col">
+<!-- Top Navigation Bar -->
+<header class="flex items-center justify-between whitespace-nowrap border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6 lg:px-10 py-3 sticky top-0 z-50">
+<div class="flex items-center gap-8">
+<div class="flex items-center gap-4 text-primary">
+<div class="size-6 flex items-center justify-center">
+<span class="material-symbols-outlined text-3xl font-bold">rocket_launch</span>
+</div>
+<h2 class="text-slate-900 dark:text-white text-lg font-bold leading-tight tracking-[-0.015em]">RecruitAI</h2>
+</div>
+<label class="hidden md:flex flex-col min-w-40 h-10 max-w-64">
+<div class="flex w-full flex-1 items-stretch rounded-lg h-full overflow-hidden">
+<div class="text-slate-500 flex border-none bg-slate-100 dark:bg-slate-800 items-center justify-center pl-4">
+<span class="material-symbols-outlined text-xl">search</span>
+</div>
+<input class="form-input flex w-full min-w-0 flex-1 border-none bg-slate-100 dark:bg-slate-800 focus:ring-0 h-full placeholder:text-slate-500 px-4 text-base font-normal" placeholder="Search candidates..." value=""/>
+</div>
+</label>
+</div>
+<div class="flex flex-1 justify-end gap-8 items-center">
+<nav class="hidden lg:flex items-center gap-9">
+<a class="text-primary text-sm font-semibold leading-normal border-b-2 border-primary py-1" href="#">Candidates</a>
+<a class="text-slate-600 dark:text-slate-400 text-sm font-medium leading-normal hover:text-primary transition-colors" href="#">Jobs</a>
+<a class="text-slate-600 dark:text-slate-400 text-sm font-medium leading-normal hover:text-primary transition-colors" href="#">Analytics</a>
+<a class="text-slate-600 dark:text-slate-400 text-sm font-medium leading-normal hover:text-primary transition-colors" href="#">Settings</a>
+</nav>
+<div class="bg-slate-200 dark:bg-slate-700 rounded-full size-10 border border-slate-300 dark:border-slate-600 flex items-center justify-center overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Professional headshot of recruiter user" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCIQAWRU-m11vPUCE5SN2-JDXhpAoDD8RinGQrfZcfPmx-zKy3f4C0_scRCE6DLLgmVZZJWRuX32TAkWJ7M4y0-jznL90f9HE2yZxSHRXAeQourUlCGqqsW-ZI0KNanFx3YUcjgCeug1aDrIgJj_INGixo-NemClmAAvlRFPa3dlqUrICxZ8uuViNf_IGt5PKwRXoY_cQO1C0BgNgryowo7Uc_al1Qtq4IRIcQ9qd80Ya3CNKFyfVncu4yT-pYYupXfQlVXkmDLCsAS"/>
+</div>
+</div>
+</header>
+<main class="flex flex-1 flex-col lg:flex-row">
+<!-- Left Sidebar -->
+<aside class="w-full lg:w-80 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 flex flex-col gap-8 h-auto lg:h-[calc(100vh-65px)] sticky top-[65px]">
+<div class="flex flex-col items-center lg:items-start text-center lg:text-left gap-4">
+<div class="relative">
+<div class="size-32 rounded-2xl overflow-hidden border-4 border-slate-100 dark:border-slate-800 shadow-sm">
+<img class="w-full h-full object-cover" data-alt="Portrait of Alex Thompson candidate" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCBbNuWBa5l_YrNhz_r-vvQUD9mZrCUrS4_3eJXMkdTcEZzxfb4M5M_RttC2O0cWTazWbQlZuSkti4qY4cQGgXJib4oo16I4nLV5w8CXikePGZ_0kxwZlxgTBHUbfwL4u0pL1BRtDHLL44f9p5-udjWown8qog_JT4rpVRTVEOXuw_oEs2EnjdnMY-oHiQh2la-FwH9h-DZWZqloqLAE33Na2XLiEOx6qMLMu7PakpfA6cDjuVV4ZoQEUb5jCnPzR9Ho3oasVGrxCqZ"/>
+</div>
+<div class="absolute -bottom-2 -right-2 bg-green-500 size-6 rounded-full border-4 border-white dark:border-slate-900" title="Available now"></div>
+</div>
+<div class="space-y-1">
+<h1 class="text-2xl font-bold text-slate-900 dark:text-white">Alex Thompson</h1>
+<p class="text-primary font-semibold text-sm uppercase tracking-wider">Senior Software Engineer</p>
+</div>
+</div>
+<div class="flex flex-col gap-2">
+<div class="flex items-center gap-3 px-4 py-3 rounded-xl bg-primary text-white shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined">analytics</span>
+<p class="text-sm font-semibold">AI Insights</p>
+</div>
+<div class="flex items-center gap-3 px-4 py-3 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer">
+<span class="material-symbols-outlined">work</span>
+<p class="text-sm font-medium">Experience</p>
+</div>
+<div class="flex items-center gap-3 px-4 py-3 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer">
+<span class="material-symbols-outlined">description</span>
+<p class="text-sm font-medium">Documents</p>
+</div>
+<div class="flex items-center gap-3 px-4 py-3 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer">
+<span class="material-symbols-outlined">sticky_note_2</span>
+<p class="text-sm font-medium">Interview Notes</p>
+</div>
+</div>
+<div class="mt-auto pt-6 border-t border-slate-100 dark:border-slate-800 space-y-4">
+<div class="space-y-3">
+<div class="flex items-center gap-3 text-slate-500 text-sm">
+<span class="material-symbols-outlined text-lg">mail</span>
+<span>alex.t@example.com</span>
+</div>
+<div class="flex items-center gap-3 text-slate-500 text-sm">
+<span class="material-symbols-outlined text-lg">location_on</span>
+<span>San Francisco, CA</span>
+</div>
+</div>
+<button class="w-full bg-primary hover:bg-primary/90 text-white font-bold py-3 rounded-xl transition-all shadow-md active:scale-[0.98]">
+                            Contact Candidate
+                        </button>
+</div>
+</aside>
+<!-- Main Content Area -->
+<div class="flex-1 overflow-y-auto p-6 lg:p-10 space-y-10">
+<!-- Breadcrumbs & Header -->
+<div class="space-y-2">
+<nav class="flex items-center gap-2 text-sm font-medium text-slate-500">
+<a class="hover:text-primary transition-colors" href="#">Candidates</a>
+<span class="material-symbols-outlined text-xs">chevron_right</span>
+<span class="text-slate-900 dark:text-slate-100 font-semibold">Alex Thompson</span>
+</nav>
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
+<div>
+<h2 class="text-3xl lg:text-4xl font-black text-slate-900 dark:text-white tracking-tight">Candidate Profile Deep-Dive</h2>
+<p class="text-slate-500 mt-2 text-lg">Detailed AI assessment and role compatibility analysis based on resume and 1st round screening.</p>
+</div>
+<div class="flex items-center gap-2 bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 px-4 py-2 rounded-lg border border-green-200 dark:border-green-900 font-bold text-sm">
+<span class="material-symbols-outlined text-lg">check_circle</span>
+                                High Compatibility
+                            </div>
+</div>
+</div>
+<!-- Multi-dimensional AI Scores -->
+<section class="space-y-6">
+<div class="flex items-center gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
+<span class="material-symbols-outlined text-primary font-bold">query_stats</span>
+<h3 class="text-xl font-bold text-slate-900 dark:text-white">Multi-dimensional AI Scores</h3>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+<!-- Exact Match -->
+<div class="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+<div class="flex justify-between items-center mb-4">
+<span class="text-sm font-bold text-slate-500 uppercase tracking-wider">Exact Match</span>
+<span class="text-2xl font-black text-primary">94%</span>
+</div>
+<div class="h-3 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+<div class="h-full bg-primary rounded-full" style="width: 94%;"></div>
+</div>
+<p class="mt-4 text-sm text-slate-500">Matches 10/12 required tech stack requirements including React, Node.js, and AWS.</p>
+</div>
+<!-- Semantic Similarity -->
+<div class="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+<div class="flex justify-between items-center mb-4">
+<span class="text-sm font-bold text-slate-500 uppercase tracking-wider">Semantic Similarity</span>
+<span class="text-2xl font-black text-primary">88%</span>
+</div>
+<div class="h-3 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+<div class="h-full bg-primary rounded-full" style="width: 88%;"></div>
+</div>
+<p class="mt-4 text-sm text-slate-500">Past roles in Fintech align perfectly with our current project complexity and regulatory needs.</p>
+</div>
+<!-- Achievement Score -->
+<div class="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+<div class="flex justify-between items-center mb-4">
+<span class="text-sm font-bold text-slate-500 uppercase tracking-wider">Achievement Score</span>
+<span class="text-2xl font-black text-primary">92%</span>
+</div>
+<div class="h-3 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+<div class="h-full bg-primary rounded-full" style="width: 92%;"></div>
+</div>
+<p class="mt-4 text-sm text-slate-500">Consistent track record of delivering measurable ROI and leading high-impact architectural changes.</p>
+</div>
+<!-- Ownership & Leadership -->
+<div class="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+<div class="flex justify-between items-center mb-4">
+<span class="text-sm font-bold text-slate-500 uppercase tracking-wider">Ownership</span>
+<span class="text-2xl font-black text-primary">85%</span>
+</div>
+<div class="h-3 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+<div class="h-full bg-primary rounded-full" style="width: 85%;"></div>
+</div>
+<p class="mt-4 text-sm text-slate-500">Indicates strong proactive problem solving and end-to-end project lifecycle management.</p>
+</div>
+</div>
+</section>
+<!-- AI Reasoning Card -->
+<section class="bg-slate-900 dark:bg-slate-950 text-white rounded-3xl p-8 lg:p-10 relative overflow-hidden">
+<div class="absolute top-0 right-0 w-64 h-64 bg-primary/20 blur-[100px] rounded-full -mr-32 -mt-32"></div>
+<div class="relative z-10 space-y-6">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary text-3xl font-bold">psychology</span>
+<h3 class="text-2xl font-bold">AI Reasoning &amp; Logic</h3>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-slate-300">
+<div class="space-y-3">
+<div class="flex items-center gap-2 text-primary font-bold uppercase text-xs tracking-widest">
+<span class="size-2 rounded-full bg-primary"></span>
+                                        Contextual Analysis
+                                    </div>
+<p class="text-sm leading-relaxed">
+                                        Our AI analyzed 8 years of Alex's professional history. The high Achievement score is derived from specific verbs and outcomes linked to "Reduced latency by 40%" and "Led migration to microservices," which correlate with top-tier engineering benchmarks.
+                                    </p>
+</div>
+<div class="space-y-3">
+<div class="flex items-center gap-2 text-primary font-bold uppercase text-xs tracking-widest">
+<span class="size-2 rounded-full bg-primary"></span>
+                                        Culture Mapping
+                                    </div>
+<p class="text-sm leading-relaxed">
+                                        The Ownership score was calculated by identifying patterns of longitudinal commitment at previous companies. Alex stays an average of 3.2 years per role, significantly higher than the 1.8 year average for this specific tech stack tier.
+                                    </p>
+</div>
+<div class="space-y-3">
+<div class="flex items-center gap-2 text-primary font-bold uppercase text-xs tracking-widest">
+<span class="size-2 rounded-full bg-primary"></span>
+                                        Skill Vectoring
+                                    </div>
+<p class="text-sm leading-relaxed">
+                                        Semantic similarity identifies that Alex's work with "distributed ledgers" translates directly to our current "high-concurrency transaction" needs, even though the keywords aren't a 1:1 match in the traditional sense.
+                                    </p>
+</div>
+</div>
+<div class="pt-6 border-t border-slate-800 flex flex-wrap gap-3">
+<div class="px-4 py-2 bg-slate-800 rounded-full text-xs font-semibold text-slate-400">Model: recruit-gpt-4o</div>
+<div class="px-4 py-2 bg-slate-800 rounded-full text-xs font-semibold text-slate-400">Confidence: 0.982</div>
+<div class="px-4 py-2 bg-slate-800 rounded-full text-xs font-semibold text-slate-400">Last Synced: 2 mins ago</div>
+</div>
+</div>
+</section>
+</div>
+</main>
+</div>
+</div>
+</body></html>
