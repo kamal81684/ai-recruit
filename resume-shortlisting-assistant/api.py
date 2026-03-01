@@ -14,11 +14,7 @@ from io import BytesIO
 app = Flask(__name__)
 
 # Configure CORS for Next.js frontend - Simple setup
-CORS(app,
-     resources={r"/*": {"origins": "*"}},
-     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-     allow_headers=["Content-Type", "Authorization", "Cache-Control"],
-     max_age=86400)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Add cache control headers to all responses
 @app.after_request
