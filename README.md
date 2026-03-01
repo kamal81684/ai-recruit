@@ -2,6 +2,19 @@
 
 An AI-powered resume evaluation system that compares candidate resumes against job descriptions and provides multi-dimensional scoring with explainability using Llama 3 via Groq API.
 
+## 🖼️ Screenshots
+
+### Home Page - Resume Upload
+![Home Page](screenshots/home.png)
+
+### Candidates Dashboard
+![Candidates Dashboard](screenshots/candidates.png)
+
+### Candidate Profile Detail
+![Candidate Profile](screenshots/candidate-profile.png)
+
+## 🎯 Features
+
 ## Project Structure
 
 ```

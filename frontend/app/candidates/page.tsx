@@ -246,11 +246,11 @@ export default function CandidatesPage() {
                   {statistics?.average_scores
                     ? (() => {
                         const scores = [
-                          statistics.average_scores.exact_match,
-                          statistics.average_scores.similarity_match,
-                          statistics.average_scores.achievement_impact,
-                          statistics.average_scores.ownership
-                        ].filter(s => s != null && !isNaN(s));
+                          Number(statistics.average_scores.exact_match) || 0,
+                          Number(statistics.average_scores.similarity_match) || 0,
+                          Number(statistics.average_scores.achievement_impact) || 0,
+                          Number(statistics.average_scores.ownership) || 0
+                        ].filter(s => !isNaN(s) && s > 0);
                         return scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
                       })()
                     : 0}

@@ -295,10 +295,10 @@ class Database:
                     'total_candidates': total,
                     'by_tier': by_tier,
                     'average_scores': {
-                        'exact_match': 0,
-                        'similarity_match': 0,
-                        'achievement_impact': 0,
-                        'ownership': 0,
+                        'exact_match': 0.0,
+                        'similarity_match': 0.0,
+                        'achievement_impact': 0.0,
+                        'ownership': 0.0,
                     }
                 }
 
@@ -306,10 +306,10 @@ class Database:
                 'total_candidates': total,
                 'by_tier': by_tier,
                 'average_scores': {
-                    'exact_match': round(averages['avg_exact'], 2) if averages.get('avg_exact') else 0,
-                    'similarity_match': round(averages['avg_similarity'], 2) if averages.get('avg_similarity') else 0,
-                    'achievement_impact': round(averages['avg_impact'], 2) if averages.get('avg_impact') else 0,
-                    'ownership': round(averages['avg_ownership'], 2) if averages.get('avg_ownership') else 0,
+                    'exact_match': float(round(averages['avg_exact'], 2)) if averages.get('avg_exact') else 0,
+                    'similarity_match': float(round(averages['avg_similarity'], 2)) if averages.get('avg_similarity') else 0,
+                    'achievement_impact': float(round(averages['avg_impact'], 2)) if averages.get('avg_impact') else 0,
+                    'ownership': float(round(averages['avg_ownership'], 2)) if averages.get('avg_ownership') else 0,
                 }
             }
 
