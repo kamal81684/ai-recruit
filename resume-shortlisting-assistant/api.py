@@ -18,7 +18,6 @@ CORS(app,
      resources={r"/*": {"origins": "*"}},
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
      allow_headers=["Content-Type", "Authorization", "Cache-Control"],
-     supports_credentials=True,
      max_age=86400)
 
 # Add cache control headers to all responses
