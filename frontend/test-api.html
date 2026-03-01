@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Test</title>
+</head>
+<body>
+    <h1>Testing Flask API from Browser</h1>
+    <button onclick="testAPI()">Test API</button>
+    <pre id="result"></pre>
+
+    <script>
+        async function testAPI() {
+            const result = document.getElementById('result');
+            result.textContent = 'Loading...';
+
+            try {
+                console.log('Fetching from: http://localhost:5001/api/candidates');
+                const response = await fetch('http://localhost:5001/api/candidates', {
+                    method: 'GET',
+                    headers: {
+                        'Cache-Control': 'no-cache',
+                    },
+                    cache: 'no-store'
+                });
+
+                console.log('Response status:', response.status);
+                console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+
+                const text = await response.text();
+                console.log('Raw response:', text);
+                console.log('Response length:', text.length);
+
+                const data = JSON.parse(text);
+                console.log('Parsed data:', data);
+
+                result.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                console.error('Error:', error);
+                result.textContent = 'Error: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>

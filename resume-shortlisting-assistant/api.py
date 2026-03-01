@@ -3,7 +3,7 @@ Flask API server for AI Resume Shortlisting Assistant
 This server provides REST API endpoints that the Next.js frontend can call.
 """
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
 from engine import extract_text_from_pdf, evaluate_resume
 from database import db, init_database
@@ -12,7 +12,23 @@ import os
 from io import BytesIO
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for Next.js frontend
+
+# Configure CORS for Next.js frontend - Simple setup
+CORS(app,
+     resources={r"/api/*": {"origins": "*"}},
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+     allow_headers=["Content-Type", "Authorization", "Cache-Control"],
+     supports_credentials=True,
+     max_age=86400)
+
+# Add cache control headers to all responses
+@app.after_request
+def add_headers(response):
+    # Prevent caching for all API responses
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 # Initialize database on startup
 if not init_database():
@@ -124,27 +140,35 @@ def get_candidates():
         offset = int(request.args.get('offset', 0))
         tier = request.args.get('tier')
 
-        print(f"📊 Fetching candidates: limit={limit}, offset={offset}, tier={tier}")
+        print(f"\n{'='*60}")
+        print(f"🌐 API CALLED: {request.method} {request.path}")
+        print(f"📋 Query params: limit={limit}, offset={offset}, tier={tier}")
+        print(f"🔗 Headers: {dict(request.headers)}")
+        print(f"🌐 Origin: {request.headers.get('Origin')}")
+        print(f"🌐 Referer: {request.headers.get('Referer')}")
 
         if tier:
             candidates = db.get_candidates_by_tier(tier)
         else:
             candidates = db.get_all_candidates(limit=limit, offset=offset)
 
-        print(f"📊 Retrieved {len(candidates)} candidates")
+        print(f"📊 Retrieved {len(candidates)} candidates from DB")
         if candidates:
+            print(f"📊 First candidate keys: {candidates[0].keys() if candidates[0] else 'N/A'}")
             print(f"📊 First candidate: {candidates[0]}")
 
-        result = {
-            'candidates': candidates,
-            'count': len(candidates)
-        }
-        print(f"📊 Returning: {result}")
+        result = {'candidates': candidates, 'count': len(candidates)}
+        print(f"📤 Returning response: {result}")
+        print(f"{'='*60}\n")
 
-        return jsonify(result), 200
+        response = jsonify(result)
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response, 200
 
     except Exception as e:
-        print(f"❌ Error in get_candidates: {e}")
+        print(f"❌ ERROR: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': f'Failed to fetch candidates: {str(e)}'}), 500

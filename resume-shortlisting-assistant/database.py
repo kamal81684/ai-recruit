@@ -163,7 +163,10 @@ class Database:
     def get_all_candidates(self, limit: int = 50, offset: int = 0) -> List[Dict]:
         """Get all candidates with pagination"""
         try:
-            query = """
+            # Create a fresh cursor to avoid state issues
+            cursor = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute("""
                 SELECT
                     id, name, email, phone, resume_filename, tier, summary,
                     exact_match_score, similarity_match_score,
@@ -173,38 +176,24 @@ class Database:
                 FROM candidates
                 ORDER BY created_at DESC
                 LIMIT %s OFFSET %s
-            """
-            print(f"🔍 Executing get_all_candidates query: limit={limit}, offset={offset}")
-            print(f"🔍 SQL Query: {query.strip()}")
-            print(f"🔍 Parameters: ({limit}, {offset})")
+            """, (limit, offset))
 
-            self.cursor.execute(query, (limit, offset))
-
-            candidates = self.cursor.fetchall()
-            print(f"🔍 Raw cursor.fetchall() returned {len(candidates)} rows")
-            if candidates:
-                print(f"🔍 First row type: {type(candidates[0])}")
-                print(f"🔍 First row keys: {candidates[0].keys() if hasattr(candidates[0], 'keys') else 'N/A'}")
-                print(f"🔍 First row data: {candidates[0]}")
-
+            candidates = cursor.fetchall()
             result = [dict(c) for c in candidates]
-            print(f"🔍 Converted to list of dicts: {len(result)} items")
-            if result:
-                print(f"🔍 First dict keys: {result[0].keys()}")
-                print(f"🔍 First dict: {result[0]}")
-
+            cursor.close()
             return result
 
         except Exception as e:
             print(f"❌ Failed to fetch candidates: {e}")
-            import traceback
-            traceback.print_exc()
             return []
 
     def get_candidate_by_id(self, candidate_id: int) -> Optional[Dict]:
         """Get a specific candidate by ID"""
         try:
-            self.cursor.execute("""
+            # Create a fresh cursor to avoid state issues
+            cursor = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute("""
                 SELECT
                     id, name, email, phone, resume_filename, resume_text, job_description,
                     tier, summary,
@@ -217,7 +206,8 @@ class Database:
                 FROM candidates WHERE id = %s
             """, (candidate_id,))
 
-            candidate = self.cursor.fetchone()
+            candidate = cursor.fetchone()
+            cursor.close()
             return dict(candidate) if candidate else None
 
         except Exception as e:
@@ -227,7 +217,10 @@ class Database:
     def get_candidates_by_tier(self, tier: str) -> List[Dict]:
         """Get candidates filtered by tier"""
         try:
-            self.cursor.execute("""
+            # Create a fresh cursor to avoid state issues
+            cursor = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute("""
                 SELECT
                     id, name, email, phone, resume_filename, tier, summary,
                     exact_match_score, similarity_match_score,
@@ -239,8 +232,10 @@ class Database:
                 ORDER BY created_at DESC
             """, (tier,))
 
-            candidates = self.cursor.fetchall()
-            return [dict(c) for c in candidates]
+            candidates = cursor.fetchall()
+            result = [dict(c) for c in candidates]
+            cursor.close()
+            return result
 
         except Exception as e:
             print(f"❌ Failed to fetch candidates by tier: {e}")
@@ -262,25 +257,29 @@ class Database:
     def get_statistics(self) -> Dict:
         """Get database statistics"""
         try:
+            # Create a fresh cursor to avoid state issues
+            cursor = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
             # Total candidates
-            self.cursor.execute("SELECT COUNT(*) as total FROM candidates")
-            total_result = self.cursor.fetchone()
+            cursor.execute("SELECT COUNT(*) as total FROM candidates")
+            total_result = cursor.fetchone()
             if not total_result:
+                cursor.close()
                 return {'total_candidates': 0, 'by_tier': {}, 'average_scores': {}}
             total = total_result['total']
 
             # Candidates by tier
-            self.cursor.execute("""
+            cursor.execute("""
                 SELECT tier, COUNT(*) as count
                 FROM candidates
                 GROUP BY tier
                 ORDER BY tier
             """)
-            by_tier_results = self.cursor.fetchall()
+            by_tier_results = cursor.fetchall()
             by_tier = {row['tier']: row['count'] for row in by_tier_results if row.get('tier')}
 
             # Average scores
-            self.cursor.execute("""
+            cursor.execute("""
                 SELECT
                     AVG(exact_match_score) as avg_exact,
                     AVG(similarity_match_score) as avg_similarity,
@@ -288,7 +287,8 @@ class Database:
                     AVG(ownership_score) as avg_ownership
                 FROM candidates
             """)
-            averages = self.cursor.fetchone()
+            averages = cursor.fetchone()
+            cursor.close()
 
             if not averages:
                 return {

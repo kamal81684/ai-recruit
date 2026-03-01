@@ -56,21 +56,40 @@ export default function CandidatesPage() {
 
   const fetchCandidates = async () => {
     try {
+      console.log("🔍 Fetching from:", `${API_URL}/api/candidates`);
       const response = await fetch(`${API_URL}/api/candidates`, {
         cache: 'no-store',
         headers: {
           'Cache-Control': 'no-cache',
         }
       });
+
+      console.log("🔍 Response status:", response.status);
+      console.log("🔍 Response headers:", Object.fromEntries(response.headers.entries()));
+
       if (!response.ok) throw new Error("Failed to fetch candidates");
+
+      // Clone response to read it multiple times
+      const clonedResponse = response.clone();
+      const textData = await clonedResponse.text();
+      console.log("🔍 Raw response text:", textData);
+      console.log("🔍 Response text length:", textData.length);
+
       const data = await response.json();
-      console.log("Fetched candidates:", data);
-      console.log("Candidates array:", data.candidates);
+      console.log("🔍 Parsed JSON:", data);
+      console.log("🔍 Candidates array:", data.candidates);
+      console.log("🔍 Type of candidates:", typeof data.candidates);
+      console.log("🔍 Is candidates an array?", Array.isArray(data.candidates));
+
+      if (data.candidates && data.candidates.length > 0) {
+        console.log("🔍 First candidate keys:", Object.keys(data.candidates[0]));
+        console.log("🔍 First candidate:", data.candidates[0]);
+      }
+
       const candidatesData = data.candidates || [];
-      console.log("Setting candidates state with:", candidatesData);
-      console.log("First candidate name:", candidatesData[0]?.name);
       setCandidates(candidatesData);
     } catch (err) {
+      console.error("❌ Error fetching candidates:", err);
       setError(err instanceof Error ? err.message : "Failed to load candidates");
     } finally {
       setLoading(false);
