@@ -1,0 +1,28 @@
+services:
+  # Type of service
+  - type: web
+
+    # Service name (optional, defaults to the service name in dashboard)
+    name: ai-recruit-backend
+
+    # Runtime environment
+    runtime: python
+
+    # Build configuration
+    buildCommand: cd resume-shortlisting-assistant && pip install -r requirements.txt
+
+    # Start command
+    startCommand: cd resume-shortlisting-assistant && python api.py
+
+    # Environment variables (can be overridden in dashboard)
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.25
+
+    # Health check path
+    healthCheckPath: /health
+
+    # Auto-deploy configuration
+    branch: main
+    # Auto-deploy on every push to the main branch
+    autoDeploy: true
