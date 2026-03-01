@@ -162,7 +162,7 @@ export default function CandidatesPage() {
             <span className="material-symbols-outlined">group</span>
             Candidates
           </a>
-          <a className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg text-slate-600 hover:bg-slate-100 transition-colors" href="#">
+          <a className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg text-slate-600 hover:bg-slate-100 transition-colors" href="/jobs">
             <span className="material-symbols-outlined text-slate-400">work</span>
             Jobs
           </a>

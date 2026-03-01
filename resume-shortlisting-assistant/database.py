@@ -72,6 +72,20 @@ class Database:
                 )
             """)
 
+            # Create job_posts table
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS job_posts (
+                    id SERIAL PRIMARY KEY,
+                    title VARCHAR(255) NOT NULL,
+                    description TEXT NOT NULL,
+                    location VARCHAR(255),
+                    requirements TEXT,
+                    status VARCHAR(20) DEFAULT 'active',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             # Create index for faster queries
             self.cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_candidates_tier ON candidates(tier)
@@ -81,6 +95,12 @@ class Database:
             """)
             self.cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_candidates_email ON candidates(email)
+            """)
+            self.cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_job_posts_status ON job_posts(status)
+            """)
+            self.cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_job_posts_created_at ON job_posts(created_at DESC)
             """)
 
             self.conn.commit()
@@ -318,6 +338,152 @@ class Database:
             import traceback
             traceback.print_exc()
             return {}
+
+    def save_job_post(
+        self,
+        title: str,
+        description: str,
+        location: str = None,
+        requirements: str = None,
+        status: str = 'active'
+    ) -> Optional[int]:
+        """
+        Save a new job post to database
+
+        Args:
+            title: Job title
+            description: Job description
+            location: Job location (optional)
+            requirements: Job requirements (optional)
+            status: Job status (default: 'active')
+
+        Returns:
+            job_id if successful, None otherwise
+        """
+        try:
+            self.cursor.execute("""
+                INSERT INTO job_posts (title, description, location, requirements, status)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING id
+            """, (title, description, location, requirements, status))
+
+            job_id = self.cursor.fetchone()['id']
+            self.conn.commit()
+            print(f"✅ Job post saved with ID: {job_id}")
+            return job_id
+
+        except Exception as e:
+            print(f"❌ Failed to save job post: {e}")
+            self.conn.rollback()
+            return None
+
+    def get_all_job_posts(self, status: str = None, limit: int = 50, offset: int = 0) -> List[Dict]:
+        """Get all job posts with optional status filter"""
+        try:
+            cursor = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            if status:
+                cursor.execute("""
+                    SELECT id, title, description, location, requirements, status, created_at, updated_at
+                    FROM job_posts
+                    WHERE status = %s
+                    ORDER BY created_at DESC
+                    LIMIT %s OFFSET %s
+                """, (status, limit, offset))
+            else:
+                cursor.execute("""
+                    SELECT id, title, description, location, requirements, status, created_at, updated_at
+                    FROM job_posts
+                    ORDER BY created_at DESC
+                    LIMIT %s OFFSET %s
+                """, (limit, offset))
+
+            job_posts = cursor.fetchall()
+            result = [dict(job) for job in job_posts]
+            cursor.close()
+            return result
+
+        except Exception as e:
+            print(f"❌ Failed to fetch job posts: {e}")
+            return []
+
+    def get_job_post_by_id(self, job_id: int) -> Optional[Dict]:
+        """Get a specific job post by ID"""
+        try:
+            cursor = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute("""
+                SELECT id, title, description, location, requirements, status, created_at, updated_at
+                FROM job_posts WHERE id = %s
+            """, (job_id,))
+
+            job_post = cursor.fetchone()
+            cursor.close()
+            return dict(job_post) if job_post else None
+
+        except Exception as e:
+            print(f"❌ Failed to fetch job post: {e}")
+            return None
+
+    def update_job_post(
+        self,
+        job_id: int,
+        title: str = None,
+        description: str = None,
+        location: str = None,
+        requirements: str = None,
+        status: str = None
+    ) -> bool:
+        """Update a job post"""
+        try:
+            updates = []
+            params = []
+
+            if title is not None:
+                updates.append("title = %s")
+                params.append(title)
+            if description is not None:
+                updates.append("description = %s")
+                params.append(description)
+            if location is not None:
+                updates.append("location = %s")
+                params.append(location)
+            if requirements is not None:
+                updates.append("requirements = %s")
+                params.append(requirements)
+            if status is not None:
+                updates.append("status = %s")
+                params.append(status)
+
+            if updates:
+                updates.append("updated_at = CURRENT_TIMESTAMP")
+                params.append(job_id)
+
+                query = f"UPDATE job_posts SET {', '.join(updates)} WHERE id = %s"
+                self.cursor.execute(query, params)
+                self.conn.commit()
+                print(f"✅ Job post {job_id} updated")
+                return True
+
+            return False
+
+        except Exception as e:
+            print(f"❌ Failed to update job post: {e}")
+            self.conn.rollback()
+            return False
+
+    def delete_job_post(self, job_id: int) -> bool:
+        """Delete a job post by ID"""
+        try:
+            self.cursor.execute("DELETE FROM job_posts WHERE id = %s", (job_id,))
+            self.conn.commit()
+            print(f"✅ Job post {job_id} deleted")
+            return True
+
+        except Exception as e:
+            print(f"❌ Failed to delete job post: {e}")
+            self.conn.rollback()
+            return False
 
 
 # Singleton instance

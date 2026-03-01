@@ -11,6 +11,14 @@ interface EvaluationData {
   ownership: { score: number; explanation: string };
 }
 
+interface JobPost {
+  id: number;
+  title: string;
+  description: string;
+  location?: string;
+  requirements?: string;
+}
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
 
 export default function Home() {
@@ -20,6 +28,8 @@ export default function Home() {
   const [error, setError] = useState("");
   const [result, setResult] = useState<EvaluationData | null>(null);
   const [backendStatus, setBackendStatus] = useState<"checking" | "connected" | "disconnected">("checking");
+  const [jobPosts, setJobPosts] = useState<JobPost[]>([]);
+  const [showJobSelector, setShowJobSelector] = useState(false);
 
   // Check backend connection on mount
   useEffect(() => {
@@ -41,6 +51,22 @@ export default function Home() {
     checkBackend();
     const interval = setInterval(checkBackend, 10000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Fetch job posts on mount
+  useEffect(() => {
+    const fetchJobPosts = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/jobs?status=active`);
+        if (response.ok) {
+          const data = await response.json();
+          setJobPosts(data.job_posts || []);
+        }
+      } catch (err) {
+        console.error("Failed to fetch job posts:", err);
+      }
+    };
+    fetchJobPosts();
   }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -152,7 +178,7 @@ export default function Home() {
             <nav className="hidden lg:flex items-center gap-8">
               <a className="text-slate-600 hover:text-primary transition-colors text-sm font-medium" href="/candidates">Dashboard</a>
               <a className="text-slate-600 hover:text-primary transition-colors text-sm font-semibold border-b-2 border-transparent hover:border-primary py-1" href="/candidates">Candidates</a>
-              <a className="text-slate-600 hover:text-primary transition-colors text-sm font-medium" href="#">Job Posts</a>
+              <a className="text-slate-600 hover:text-primary transition-colors text-sm font-medium" href="/jobs">Job Posts</a>
               <a className="text-slate-600 hover:text-primary transition-colors text-sm font-medium" href="#">Analytics</a>
             </nav>
             <div className="h-10 w-[1px] bg-slate-200 hidden lg:block mx-2"></div>
@@ -263,10 +289,41 @@ export default function Home() {
                     placeholder="Paste the job description here or select an existing job post..."
                   />
                   <div className="mt-4 flex justify-between items-center">
-                    <button className="flex items-center gap-2 text-primary text-sm font-semibold hover:underline">
-                      <span className="material-symbols-outlined text-sm">link</span>
-                      Select from active Job Posts
-                    </button>
+                    <div className="relative">
+                      <button
+                        onClick={() => setShowJobSelector(!showJobSelector)}
+                        className="flex items-center gap-2 text-primary text-sm font-semibold hover:underline"
+                        disabled={jobPosts.length === 0}
+                      >
+                        <span className="material-symbols-outlined text-sm">link</span>
+                        Select from active Job Posts {jobPosts.length > 0 && `(${jobPosts.length})`}
+                      </button>
+                      {showJobSelector && jobPosts.length > 0 && (
+                        <div className="absolute top-full left-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-slate-200 z-50 max-h-64 overflow-y-auto">
+                          <div className="p-2 border-b border-slate-100">
+                            <p className="text-xs font-bold text-slate-500">Select a Job Post</p>
+                          </div>
+                          {jobPosts.map((job) => (
+                            <button
+                              key={job.id}
+                              onClick={() => {
+                                setJobDescription(job.description);
+                                setShowJobSelector(false);
+                              }}
+                              className="w-full text-left px-3 py-2 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0"
+                            >
+                              <p className="text-sm font-medium text-slate-900 truncate">{job.title}</p>
+                              {job.location && (
+                                <p className="text-xs text-slate-500 truncate flex items-center gap-1">
+                                  <span className="material-symbols-outlined text-[12px]">location_on</span>
+                                  {job.location}
+                                </p>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <span className="text-xs text-slate-400 font-medium">{jobDescription.trim() ? jobDescription.trim().split(/\s+/).length : 0} words entered</span>
                   </div>
                 </div>
