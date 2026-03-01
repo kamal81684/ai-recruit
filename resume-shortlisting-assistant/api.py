@@ -9,6 +9,7 @@ from engine import extract_text_from_pdf, evaluate_resume, generate_job_post
 from database import db, init_database
 from resume_parser import extract_candidate_info
 import os
+import psycopg2.extras
 from io import BytesIO
 
 app = Flask(__name__)
