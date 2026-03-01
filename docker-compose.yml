@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./resume-shortlisting-assistant
+      dockerfile: Dockerfile
+    image: ghcr.io/kamal81684/ai-recruit-backend:latest
+    container_name: ai-recruit-backend
+    ports:
+      - "5001:5001"
+    environment:
+      - PORT=5001
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - DATABASE_URL=${DATABASE_URL}
+      - FLASK_DEBUG=False
+    env_file:
+      - resume-shortlisting-assistant/.env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    networks:
+      - ai-recruit-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: ghcr.io/kamal81684/ai-recruit-frontend:latest
+    container_name: ai-recruit-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:5001
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - ai-recruit-network
+
+networks:
+  ai-recruit-network:
+    driver: bridge
+
+volumes:
+  backend-data:
