@@ -13,8 +13,8 @@ from io import BytesIO
 
 app = Flask(__name__)
 
-# Configure CORS for Next.js frontend - Simple setup
-CORS(app, resources={r"/*": {"origins": "*"}})
+# Configure CORS for Next.js frontend - Allow specific origins
+CORS(app, resources={r"/*": {"origins": ["http://localhost:3000", "https://ai-recruit-two.vercel.app"]}})
 
 # Add cache control headers to all responses
 @app.after_request
