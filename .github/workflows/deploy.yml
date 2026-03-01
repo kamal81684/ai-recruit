@@ -1,0 +1,78 @@
+name: Build and Deploy to Render
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'resume-shortlisting-assistant/**'
+      - '.github/workflows/deploy.yml'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/ai-recruit-backend
+  RENDER_SERVICE_ID: srv-d6i9bu1aae7s73ccjug0
+  RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./resume-shortlisting-assistant
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Get image tag
+        id: image-tag
+        run: |
+          TAG=${{ steps.meta.outputs.tags }}
+          # Extract the SHA tag (e.g., main-abc123def)
+          IMAGE_TAG=$(echo $TAG | grep -oP 'main-\w+' || echo "main-latest")
+          echo "tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "Using image tag: $IMAGE_TAG"
+
+      - name: Update Render service
+        run: |
+          # Update the Render service to use the new image tag
+          curl -X PATCH "https://api.render.com/v1/services/${{ env.RENDER_SERVICE_ID }}" \
+            -H "Authorization: Bearer ${{ env.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "imagePath": "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.image-tag.outputs.tag }}"
+            }'
+
+      - name: Trigger Render deployment
+        run: |
+          # Trigger a new deployment on Render
+          curl -X POST "https://api.render.com/v1/services/${{ env.RENDER_SERVICE_ID }}/deploys" \
+            -H "Authorization: Bearer ${{ env.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json"
