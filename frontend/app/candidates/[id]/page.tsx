@@ -31,61 +31,18 @@ interface Candidate {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
 
-interface InterviewQuestion {
-  id: number;
-  candidate_id: number;
-  question: string;
-  category: string;
-  created_at: string;
-}
-
 export default function CandidateProfilePage() {
   const params = useParams();
   const candidateId = params.id;
   const [candidate, setCandidate] = useState<Candidate | null>(null);
-  const [interviewQuestions, setInterviewQuestions] = useState<InterviewQuestion[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [error, setError] = useState("");
-  const [showQuestions, setShowQuestions] = useState(true);
 
   useEffect(() => {
     if (candidateId) {
       fetchCandidate();
-      fetchInterviewQuestions();
     }
   }, [candidateId]);
-
-  const fetchInterviewQuestions = async () => {
-    try {
-      const response = await fetch(`${API_URL}/api/candidates/${candidateId}/interview-questions`, {
-        cache: 'no-store'
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setInterviewQuestions(data.questions || []);
-      }
-    } catch (err) {
-      console.log("No interview questions found");
-    }
-  };
-
-  const generateInterviewQuestions = async () => {
-    setLoadingQuestions(true);
-    try {
-      const response = await fetch(`${API_URL}/api/candidates/${candidateId}/interview-questions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" }
-      });
-      if (!response.ok) throw new Error("Failed to generate questions");
-      const data = await response.json();
-      setInterviewQuestions(data.questions || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate questions");
-    } finally {
-      setLoadingQuestions(false);
-    }
-  };
 
   const fetchCandidate = async () => {
     try {
@@ -178,53 +135,14 @@ export default function CandidateProfilePage() {
             <span className="material-symbols-outlined">description</span>
             <p className="text-sm font-medium">Resume</p>
           </div>
-          <button
-            onClick={() => setShowQuestions(!showQuestions)}
-            className="flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer w-full text-left"
+          <a
+            href={`/candidates/${candidateId}/questions`}
+            className="flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
           >
             <span className="material-symbols-outlined">quiz</span>
-            <p className="text-sm font-medium flex-1">Interview Questions</p>
-            <span className="material-symbols-outlined text-slate-400 text-sm">{showQuestions ? "expand_less" : "expand_more"}</span>
-          </button>
+            <p className="text-sm font-medium">Interview Questions</p>
+          </a>
         </div>
-
-        {/* Interview Questions Section */}
-        {showQuestions && (
-          <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold text-slate-700">Interview Questions</h3>
-              <button
-                onClick={generateInterviewQuestions}
-                disabled={loadingQuestions}
-                className="flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary/80 disabled:text-slate-400"
-              >
-                <span className="material-symbols-outlined text-sm">auto_awesome</span>
-                {loadingQuestions ? "Generating..." : interviewQuestions.length > 0 ? "Regenerate" : "Generate"}
-              </button>
-            </div>
-            {interviewQuestions.length > 0 ? (
-              <div className="space-y-3 max-h-80 overflow-y-auto">
-                {interviewQuestions.map((q, index) => (
-                  <div key={q.id} className="bg-white rounded-lg p-3 border border-slate-200">
-                    <div className="flex items-start gap-2">
-                      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary text-white text-xs flex items-center justify-center font-bold">
-                        {index + 1}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-slate-800 font-medium">{q.question}</p>
-                        <span className="text-xs text-slate-400 mt-1 inline-block">{q.category}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-slate-500 text-center py-4">
-                {loadingQuestions ? "Generating questions..." : "No questions yet. Click Generate to create AI-powered interview questions."}
-              </p>
-            )}
-          </div>
-        )}
 
         <div className="mt-auto pt-6 border-t border-slate-100 space-y-4">
           {candidate.email && (
