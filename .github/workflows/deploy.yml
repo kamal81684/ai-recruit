@@ -38,7 +38,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=sha,prefix={{branch}}-
+            type=sha,prefix=
             type=raw,value=latest
 
       - name: Build and push Docker image
@@ -51,28 +51,33 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Get image tag
-        id: image-tag
+      - name: Get full image name
+        id: image
         run: |
-          TAG=${{ steps.meta.outputs.tags }}
-          # Extract the SHA tag (e.g., main-abc123def)
-          IMAGE_TAG=$(echo $TAG | grep -oP 'main-\w+' || echo "main-latest")
-          echo "tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
-          echo "Using image tag: $IMAGE_TAG"
+          # Get the SHA tag (short format like: abc1234)
+          SHA_TAG=$(echo ${{ github.sha }} | cut -c1-7)
+          IMAGE_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHA_TAG}"
+          echo "tag=${SHA_TAG}" >> $GITHUB_OUTPUT
+          echo "image=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "Using image: ${IMAGE_TAG}"
 
-      - name: Update Render service
+      - name: Update and trigger Render deployment
         run: |
-          # Update the Render service to use the new image tag
+          # First, update the service to use the new image
+          echo "Updating Render service to use image: ${{ steps.image.outputs.image }}"
           curl -X PATCH "https://api.render.com/v1/services/${{ env.RENDER_SERVICE_ID }}" \
             -H "Authorization: Bearer ${{ env.RENDER_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d '{
-              "imagePath": "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.image-tag.outputs.tag }}"
-            }'
+            -d "{
+              \"imagePath\": \"${{ steps.image.outputs.image }}\"
+            }"
 
-      - name: Trigger Render deployment
-        run: |
-          # Trigger a new deployment on Render
+          echo "Triggering new deployment..."
+          # Then trigger a manual deploy
           curl -X POST "https://api.render.com/v1/services/${{ env.RENDER_SERVICE_ID }}/deploys" \
             -H "Authorization: Bearer ${{ env.RENDER_API_KEY }}" \
-            -H "Content-Type: application/json"
+            -H "Content-Type: application/json" \
+            -d '{}'
+
+          echo "✅ Render deployment triggered successfully!"
+          echo "🚀 Your service will be available at: https://ai-recruit-backend-main-d1009e8.onrender.com"
