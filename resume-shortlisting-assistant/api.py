@@ -5,7 +5,9 @@ This server provides REST API endpoints that the Next.js frontend can call.
 Architecture improvements:
 - Configuration managed through centralized config module
 - Provider-agnostic LLM interactions
-- Improved error handling and validation
+- Global exception handling with standardized error responses
+- Request ID tracking for debugging
+- Input validation with Pydantic models
 
 Contributor: shubham21155102
 """
@@ -16,11 +18,28 @@ from engine import extract_text_from_pdf, evaluate_resume, generate_job_post
 from database import db, init_database
 from resume_parser import extract_candidate_info
 from config import get_config
+from error_handlers import (
+    register_error_handlers,
+    init_request_tracking,
+    ValidationError,
+    NotFoundError,
+    ConfigurationError,
+    FileProcessingError,
+    get_request_id
+)
 import os
 import psycopg2.extras
 from io import BytesIO
+import logging
 
 app = Flask(__name__)
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Load configuration
 try:
@@ -28,9 +47,13 @@ try:
     # Configure CORS using centralized config
     CORS(app, resources={r"/*": {"origins": config.cors_origins}})
 except Exception as e:
-    print(f"Warning: Could not load configuration: {e}")
+    logger.warning(f"Warning: Could not load configuration: {e}")
     # Fallback to default origins
     CORS(app, resources={r"/*": {"origins": ["http://localhost:3000", "https://ai-recruit-two.vercel.app"]}})
+
+# Register error handlers and request tracking
+register_error_handlers(app)
+init_request_tracking(app)
 
 # Add cache control headers to all responses
 @app.after_request
@@ -260,23 +283,6 @@ def generate_interview_questions(candidate_id):
             num_questions=10
         )
 
-CANDIDATE PROFILE:
-Name: {candidate.get('name', 'Unknown')}
-Current Role: {candidate.get('current_role', 'Unknown')}
-Skills: {candidate.get('skills', 'Not specified')}
-Experience: {candidate.get('experience_years', 'Unknown')} years
-Education: {candidate.get('education', 'Not specified')}
-
-JOB DESCRIPTION:
-{candidate.get('job_description', 'Not specified')[:1000]}
-
-CANDIDATE TIER: {candidate.get('tier', 'Unknown')}
-EVALUATION SUMMARY: {candidate.get('summary', '')[:500]}
-
-Generate questions that:
-1. Test technical depth in their claimed skills
-2. Explore their achievements and impact mentioned in the resume
-3. Assess cultural fit and soft skills
         # Save questions to database
         saved_questions = []
         for q in questions_list:
@@ -582,6 +588,115 @@ def generate_ai_job_post():
         return jsonify({'error': str(e)}), 400
     except Exception as e:
         return jsonify({'error': f'Failed to generate job post: {str(e)}'}), 500
+
+@app.route('/api/analytics/skill-gap', methods=['POST'])
+def analyze_skill_gap():
+    """
+    Analyze skill gaps in the candidate pool for a given job.
+
+    This feature helps hiring managers understand which skills are
+    missing from their candidate pool and provides recommendations
+    for addressing these gaps.
+
+    Expected JSON body:
+    - job_skills: list of strings (required) - skills required for the position
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            raise ValidationError('Request body is required')
+
+        job_skills = data.get('job_skills')
+
+        if not job_skills or not isinstance(job_skills, list):
+            raise ValidationError('job_skills must be a non-empty list')
+
+        if len(job_skills) < 1:
+            raise ValidationError('At least one skill is required')
+
+        logger.info(f"Analyzing skill gap for {len(job_skills)} skills")
+
+        cursor = db.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        # Get all candidates with their skills
+        cursor.execute("""
+            SELECT id, name, skills, tier
+            FROM candidates
+            WHERE skills IS NOT NULL AND skills != ''
+            ORDER BY tier
+        """)
+        candidates = cursor.fetchall()
+        cursor.close()
+
+        if not candidates:
+            return jsonify({
+                'missing_skills': job_skills,
+                'coverage_percentage': 0.0,
+                'candidate_count': 0,
+                'recommendations': [
+                    'No candidates found in database. Start by uploading resumes.',
+                ]
+            }), 200
+
+        # Analyze skill coverage
+        job_skills_lower = [s.lower().strip() for s in job_skills]
+        found_skills = set()
+        skill_to_candidates = {skill: [] for skill in job_skills_lower}
+
+        for candidate in candidates:
+            candidate_skills = candidate.get('skills', '').lower()
+            for skill in job_skills_lower:
+                # Check if skill is mentioned in candidate's skills
+                if skill in candidate_skills:
+                    found_skills.add(skill)
+                    skill_to_candidates[skill].append(candidate.get('name', 'Unknown'))
+
+        missing_skills = [s for s in job_skills_lower if s not in found_skills]
+        coverage_percentage = (len(found_skills) / len(job_skills_lower)) * 100
+
+        # Generate recommendations
+        recommendations = []
+        if coverage_percentage < 50:
+            recommendations.append(
+                f"Low skill coverage ({coverage_percentage:.1f}%). Consider targeting "
+                f"recruitment efforts towards candidates with these missing skills."
+            )
+        elif coverage_percentage < 80:
+            recommendations.append(
+                f"Moderate skill coverage ({coverage_percentage:.1f}%). Some skills gaps exist."
+            )
+        else:
+            recommendations.append(
+                f"Good skill coverage ({coverage_percentage:.1f}%). Candidate pool has most required skills."
+            )
+
+        if missing_skills:
+            recommendations.append(
+                f"Missing skills: {', '.join(missing_skills)}. "
+                f"Consider sourcing candidates with expertise in these areas."
+            )
+
+        # Add specific skill sourcing recommendations
+        for skill in missing_skills[:3]:  # Limit to top 3
+            recommendations.append(
+                f"Consider posting job ads on platforms specializing in {skill} talent, "
+                f"or reach out to professional communities for this skill."
+            )
+
+        return jsonify({
+            'missing_skills': missing_skills,
+            'coverage_percentage': round(coverage_percentage, 1),
+            'candidate_count': len(candidates),
+            'found_skills': list(found_skills),
+            'recommendations': recommendations
+        }), 200
+
+    except ValidationError as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Failed to analyze skill gap: {e}")
+        raise
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))

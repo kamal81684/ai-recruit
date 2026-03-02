@@ -108,6 +108,18 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_candidates_email ON candidates(email)
             """)
             self.cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_candidates_location ON candidates(location)
+            """)
+            self.cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_candidates_skills ON candidates USING gin(to_tsvector('english', skills))
+            """)
+            self.cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_candidates_current_role ON candidates("current_role")
+            """)
+            self.cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_candidates_tier_created ON candidates(tier, created_at DESC)
+            """)
+            self.cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_job_posts_status ON job_posts(status)
             """)
             self.cursor.execute("""
