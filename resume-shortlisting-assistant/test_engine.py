@@ -1,52 +1,119 @@
 """
 Unit tests for the resume evaluation engine.
 
-These tests use pytest and mock the Groq API calls to avoid requiring
+These tests use pytest and mock the LLM API calls to avoid requiring
 actual API keys during testing.
+
+Architecture improvements:
+- Tests now mock provider abstraction instead of direct API calls
+- Configuration validation is tested
+- Provider switching is tested
+
+Contributor: shubham21155102
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock, AsyncMock
+from unittest.mock import Mock, patch, MagicMock
 from io import BytesIO
 from engine import (
     extract_text_from_pdf,
+    evaluate_resume,
+    generate_job_post
+)
+from llm_providers import (
     EvaluationScore,
     CandidateEvaluation,
-    evaluate_resume
+    BaseLLMProvider
 )
 
 
-# Mock result for tests
-MOCK_EVALUATION_TIER_A = CandidateEvaluation(
-    exact_match=EvaluationScore(score=85, explanation="Good match"),
-    similarity_match=EvaluationScore(score=75, explanation="Related skills"),
-    achievement_impact=EvaluationScore(score=70, explanation="Some achievements"),
-    ownership=EvaluationScore(score=80, explanation="Leadership shown"),
-    tier="Tier A",
-    summary="Strong candidate"
-)
+# =============================================================================
+# Mock Provider for Testing
+# =============================================================================
 
-MOCK_EVALUATION_TIER_B = CandidateEvaluation(
-    exact_match=EvaluationScore(score=60, explanation="Moderate match"),
-    similarity_match=EvaluationScore(score=55, explanation="Some related skills"),
-    achievement_impact=EvaluationScore(score=50, explanation="Limited achievements"),
-    ownership=EvaluationScore(score=45, explanation="Some leadership"),
-    tier="Tier B",
-    summary="Good candidate for technical screen"
-)
+class MockLLMProvider(BaseLLMProvider):
+    """Mock LLM provider for testing purposes."""
 
+    def __init__(self, api_key: str = "test-key", **kwargs):
+        super().__init__(api_key, **kwargs)
+        self.mock_evaluation = None
+        self.mock_job_post = None
+
+    def get_llm(self):
+        return MagicMock()
+
+    def evaluate_resume(self, resume_text: str, jd_text: str) -> CandidateEvaluation:
+        if self.mock_evaluation:
+            return self.mock_evaluation
+        return CandidateEvaluation(
+            exact_match=EvaluationScore(score=75, explanation="Mock evaluation"),
+            similarity_match=EvaluationScore(score=70, explanation="Mock similarity"),
+            achievement_impact=EvaluationScore(score=65, explanation="Mock achievement"),
+            ownership=EvaluationScore(score=80, explanation="Mock ownership"),
+            tier="Tier B",
+            summary="Mock candidate summary"
+        )
+
+    def generate_job_post(self, title: str, location=None, additional_info=None):
+        if self.mock_job_post:
+            return self.mock_job_post
+        return {
+            "description": f"Mock job description for {title}",
+            "requirements": "Mock requirements"
+        }
+
+    def generate_interview_questions(self, candidate_profile, job_description, num_questions=10):
+        return [
+            {"question": "Mock question 1", "category": "Technical"},
+            {"question": "Mock question 2", "category": "Behavioral"},
+        ]
+
+
+# =============================================================================
+# Test Fixtures
+# =============================================================================
+
+@pytest.fixture
+def mock_provider():
+    """Fixture providing a mock LLM provider."""
+    provider = MockLLMProvider(api_key="test-key")
+    provider.mock_evaluation = CandidateEvaluation(
+        exact_match=EvaluationScore(score=85, explanation="Good match"),
+        similarity_match=EvaluationScore(score=75, explanation="Related skills"),
+        achievement_impact=EvaluationScore(score=70, explanation="Some achievements"),
+        ownership=EvaluationScore(score=80, explanation="Leadership shown"),
+        tier="Tier A",
+        summary="Strong candidate"
+    )
+    return provider
+
+
+@pytest.fixture
+def tier_b_evaluation():
+    """Fixture for Tier B evaluation result."""
+    return CandidateEvaluation(
+        exact_match=EvaluationScore(score=60, explanation="Moderate match"),
+        similarity_match=EvaluationScore(score=55, explanation="Some related skills"),
+        achievement_impact=EvaluationScore(score=50, explanation="Limited achievements"),
+        ownership=EvaluationScore(score=45, explanation="Some leadership"),
+        tier="Tier B",
+        summary="Good candidate for technical screen"
+    )
+
+
+# =============================================================================
+# PDF Extraction Tests
+# =============================================================================
 
 class TestExtractTextFromPDF:
     """Tests for PDF text extraction functionality."""
 
     def test_extract_text_from_valid_pdf(self):
         """Test extracting text from a valid PDF."""
-        # Create a mock PDF content
         mock_pdf_content = b"%PDF-1.4\nTest content\n%%EOF"
         pdf_bytes = BytesIO(mock_pdf_content)
 
         with patch('engine.PdfReader') as mock_reader_class:
-            # Setup mock reader
             mock_reader = MagicMock()
             mock_page = MagicMock()
             mock_page.extract_text.return_value = "Sample resume text"
@@ -102,81 +169,91 @@ class TestExtractTextFromPDF:
                 extract_text_from_pdf(pdf_bytes)
 
 
+# =============================================================================
+# Resume Evaluation Tests
+# =============================================================================
+
 class TestEvaluateResume:
     """Tests for resume evaluation functionality."""
 
-    def test_evaluate_resume_raises_error_without_api_key(self):
-        """Test that evaluate_resume raises ValueError when GROQ_API_KEY is not set."""
-        with patch.dict('os.environ', {}, clear=True):
-            with pytest.raises(ValueError, match="GROQ_API_KEY environment variable is not set"):
-                evaluate_resume("sample resume", "sample jd")
-
-    @patch('engine.ChatPromptTemplate')
-    @patch('engine.ChatGroq')
-    @patch.dict('os.environ', {'GROQ_API_KEY': 'test-api-key'})
-    def test_evaluate_resume_calls_groq_api(self, mock_chat_groq, mock_prompt_template):
-        """Test that evaluate_resume properly calls Groq API."""
-        # Setup mock LLM
-        mock_llm = MagicMock()
-        mock_chat_groq.return_value = mock_llm
-
-        # Setup mock structured LLM
-        mock_structured_llm = MagicMock()
-
-        # Create a mock chain that returns our result
-        mock_chain = MagicMock()
-        mock_chain.invoke.return_value = MOCK_EVALUATION_TIER_A
-
-        # The chain is created by: prompt | structured_llm
-        # We need to mock the | operator on the prompt
-        mock_prompt_instance = MagicMock()
-        mock_prompt_instance.__or__.return_value = mock_chain
-        mock_prompt_template.from_messages.return_value = mock_prompt_instance
-
-        mock_llm.with_structured_output.return_value = mock_structured_llm
+    @patch.dict('os.environ', {
+        'GROQ_API_KEY': 'test-api-key',
+        'LLM_PROVIDER': 'groq'
+    })
+    @patch('llm_providers.get_provider')
+    def test_evaluate_resume_with_mock_provider(self, mock_get_provider, mock_provider):
+        """Test that evaluate_resume uses the provider abstraction."""
+        mock_get_provider.return_value = mock_provider
 
         result = evaluate_resume("resume text", "jd text")
 
-        # Verify the result
         assert result.tier == "Tier A"
         assert result.exact_match.score == 85
         assert result.summary == "Strong candidate"
 
-        # Verify LLM was called with correct parameters
-        mock_chat_groq.assert_called_once()
-        call_kwargs = mock_chat_groq.call_args.kwargs
-        assert call_kwargs['model'] == "openai/gpt-oss-120b"
-        assert call_kwargs['temperature'] == 0.0
-        assert call_kwargs['api_key'] == 'test-api-key'
-
-    @patch('engine.ChatPromptTemplate')
-    @patch('engine.ChatGroq')
-    @patch.dict('os.environ', {'GROQ_API_KEY': 'test-api-key'})
-    def test_evaluate_resume_tier_b_classification(self, mock_chat_groq, mock_prompt_template):
+    @patch('llm_providers.get_provider')
+    def test_evaluate_resume_tier_b_classification(
+        self, mock_get_provider, tier_b_evaluation
+    ):
         """Test evaluation with Tier B classification."""
-        # Setup mock LLM
-        mock_llm = MagicMock()
-        mock_chat_groq.return_value = mock_llm
+        mock_provider = MockLLMProvider(api_key="test-key")
+        mock_provider.mock_evaluation = tier_b_evaluation
+        mock_get_provider.return_value = mock_provider
 
-        # Setup mock structured LLM
-        mock_structured_llm = MagicMock()
-
-        # Create a mock chain that returns our result
-        mock_chain = MagicMock()
-        mock_chain.invoke.return_value = MOCK_EVALUATION_TIER_B
-
-        # Mock the | operator on the prompt
-        mock_prompt_instance = MagicMock()
-        mock_prompt_instance.__or__.return_value = mock_chain
-        mock_prompt_template.from_messages.return_value = mock_prompt_instance
-
-        mock_llm.with_structured_output.return_value = mock_structured_llm
-
-        result = evaluate_resume("resume text", "jd text")
+        with patch.dict('os.environ', {'GROQ_API_KEY': 'test-api-key'}):
+            result = evaluate_resume("resume text", "jd text")
 
         assert result.tier == "Tier B"
         assert result.exact_match.score == 60
 
+    @patch('llm_providers.get_provider')
+    def test_evaluate_resume_propagates_provider_errors(self, mock_get_provider):
+        """Test that provider errors are properly propagated."""
+        mock_get_provider.side_effect = ValueError("Provider configuration error")
+
+        with patch.dict('os.environ', {'GROQ_API_KEY': 'test-api-key'}):
+            with pytest.raises(ValueError, match="Provider configuration error"):
+                evaluate_resume("resume text", "jd text")
+
+
+# =============================================================================
+# Job Post Generation Tests
+# =============================================================================
+
+class TestGenerateJobPost:
+    """Tests for job post generation functionality."""
+
+    @patch('llm_providers.get_provider')
+    def test_generate_job_post_basic(self, mock_get_provider):
+        """Test basic job post generation."""
+        mock_provider = MockLLMProvider(api_key="test-key")
+        mock_get_provider.return_value = mock_provider
+
+        with patch.dict('os.environ', {'GROQ_API_KEY': 'test-api-key'}):
+            result = generate_job_post("Software Engineer")
+
+        assert "description" in result
+        assert "requirements" in result
+        assert "Software Engineer" in result["description"]
+
+    @patch('llm_providers.get_provider')
+    def test_generate_job_post_with_location(self, mock_get_provider):
+        """Test job post generation with location."""
+        mock_provider = MockLLMProvider(api_key="test-key")
+        mock_get_provider.return_value = mock_provider
+
+        with patch.dict('os.environ', {'GROQ_API_KEY': 'test-api-key'}):
+            result = generate_job_post(
+                "Software Engineer",
+                location="San Francisco, CA"
+            )
+
+        assert result is not None
+
+
+# =============================================================================
+# Model Validation Tests
+# =============================================================================
 
 class TestEvaluationScore:
     """Tests for EvaluationScore model."""
@@ -188,8 +265,8 @@ class TestEvaluationScore:
         assert score.score == 90
         assert score.explanation == "Excellent match"
 
-    def test_evaluation_score_defaults(self):
-        """Test EvaluationScore with missing fields."""
+    def test_evaluation_score_validation(self):
+        """Test EvaluationScore validates required fields."""
         # Pydantic should raise error for missing required fields
         with pytest.raises(Exception):
             EvaluationScore(score=90)
@@ -227,3 +304,35 @@ class TestCandidateEvaluation:
                 summary="test"
             )
             assert evaluation.tier == tier
+
+
+# =============================================================================
+# Configuration Tests
+# =============================================================================
+
+class TestConfiguration:
+    """Tests for configuration management."""
+
+    @patch.dict('os.environ', {
+        'GROQ_API_KEY': 'test-key',
+        'LLM_PROVIDER': 'groq'
+    })
+    def test_config_loads_from_env(self):
+        """Test that configuration loads from environment variables."""
+        from config import get_config
+        config = get_config()
+
+        assert config.llm_provider == 'groq'
+        assert config.llm.api_key == 'test-key'
+
+    @patch.dict('os.environ', {
+        'OPENAI_API_KEY': 'openai-test-key',
+        'LLM_PROVIDER': 'openai'
+    })
+    def test_config_supports_openai_provider(self):
+        """Test that configuration supports OpenAI provider."""
+        from config import get_config
+        config = get_config()
+
+        assert config.llm_provider == 'openai'
+        assert config.llm.api_key == 'openai-test-key'
