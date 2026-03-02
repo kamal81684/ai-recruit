@@ -1,6 +1,13 @@
 """
 Flask API server for AI Resume Shortlisting Assistant
 This server provides REST API endpoints that the Next.js frontend can call.
+
+Architecture improvements:
+- Configuration managed through centralized config module
+- Provider-agnostic LLM interactions
+- Improved error handling and validation
+
+Contributor: shubham21155102
 """
 
 from flask import Flask, request, jsonify, make_response
@@ -8,14 +15,22 @@ from flask_cors import CORS
 from engine import extract_text_from_pdf, evaluate_resume, generate_job_post
 from database import db, init_database
 from resume_parser import extract_candidate_info
+from config import get_config
 import os
 import psycopg2.extras
 from io import BytesIO
 
 app = Flask(__name__)
 
-# Configure CORS for Next.js frontend - Allow specific origins
-CORS(app, resources={r"/*": {"origins": ["http://localhost:3000", "https://ai-recruit-two.vercel.app"]}})
+# Load configuration
+try:
+    config = get_config()
+    # Configure CORS using centralized config
+    CORS(app, resources={r"/*": {"origins": config.cors_origins}})
+except Exception as e:
+    print(f"Warning: Could not load configuration: {e}")
+    # Fallback to default origins
+    CORS(app, resources={r"/*": {"origins": ["http://localhost:3000", "https://ai-recruit-two.vercel.app"]}})
 
 # Add cache control headers to all responses
 @app.after_request
@@ -56,9 +71,13 @@ def evaluate_candidate():
         if not resume_file:
             return jsonify({'error': 'Resume file is required'}), 400
 
-        # Check API key
-        if not os.getenv('GROQ_API_KEY'):
-            return jsonify({'error': 'GROQ_API_KEY environment variable is missing'}), 500
+        # Check API key using centralized config
+        try:
+            config = get_config()
+            if not config.llm.api_key:
+                return jsonify({'error': f'{config.llm_provider.upper()}_API_KEY environment variable is missing'}), 500
+        except Exception as e:
+            return jsonify({'error': f'Configuration error: {str(e)}'}), 500
 
         # Check file type
         if not resume_file.filename.endswith('.pdf'):
@@ -214,9 +233,13 @@ def generate_interview_questions(candidate_id):
     This will replace any existing questions for this candidate.
     """
     try:
-        # Check API key
-        if not os.getenv('GROQ_API_KEY'):
-            return jsonify({'error': 'GROQ_API_KEY environment variable is missing'}), 500
+        # Check API key using centralized config
+        try:
+            config = get_config()
+            if not config.llm.api_key:
+                return jsonify({'error': f'{config.llm_provider.upper()}_API_KEY environment variable is missing'}), 500
+        except Exception as e:
+            return jsonify({'error': f'Configuration error: {str(e)}'}), 500
 
         # Get candidate data
         candidate = db.get_candidate_by_id(candidate_id)
@@ -226,13 +249,16 @@ def generate_interview_questions(candidate_id):
         # Delete existing questions
         db.delete_interview_questions(candidate_id)
 
-        # Generate AI questions based on candidate's profile and job description
-        from groq import Groq
+        # Generate AI questions using the provider abstraction
+        from llm_providers import get_provider
         import json
 
-        client = Groq(api_key=os.getenv('GROQ_API_KEY'))
-
-        prompt = f"""You are an expert technical interviewer. Based on the following candidate profile and job description, generate 8-10 targeted interview questions.
+        provider = get_provider()
+        questions_list = provider.generate_interview_questions(
+            candidate_profile=candidate,
+            job_description=candidate.get('job_description', 'Not specified'),
+            num_questions=10
+        )
 
 CANDIDATE PROFILE:
 Name: {candidate.get('name', 'Unknown')}
@@ -251,81 +277,22 @@ Generate questions that:
 1. Test technical depth in their claimed skills
 2. Explore their achievements and impact mentioned in the resume
 3. Assess cultural fit and soft skills
-4. Include both behavioral and technical questions
-5. Are tailored to their tier level (harder questions for Tier A, foundational for Tier C)
+        # Save questions to database
+        saved_questions = []
+        for q in questions_list:
+            if isinstance(q, dict) and 'question' in q:
+                category = q.get('category', 'General')
+                question_id = db.save_interview_question(candidate_id, q['question'], category)
+                if question_id:
+                    saved_questions.append({
+                        'id': question_id,
+                        'candidate_id': candidate_id,
+                        'question': q['question'],
+                        'category': category,
+                        'created_at': None
+                    })
 
-Return ONLY a valid JSON array with this exact structure:
-[
-  {{"question": "question text here", "category": "Technical|Behavioral|Cultural"}}
-]
-
-Ensure the JSON is valid and properly formatted."""
-
-        chat_completion = client.chat.completions.create(
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an expert technical interviewer. Always respond with valid JSON only."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            model="llama-3.3-70b-versatile",
-            temperature=0.5,
-            max_tokens=2048,
-            response_format={"type": "json_object"}
-        )
-
-        response_text = chat_completion.choices[0].message.content
-
-        # Parse the response
-        try:
-            questions_data = json.loads(response_text)
-
-            # Handle different response formats
-            if isinstance(questions_data, list):
-                questions_list = questions_data
-            elif isinstance(questions_data, dict) and 'questions' in questions_data:
-                questions_list = questions_data['questions']
-            else:
-                questions_list = []
-
-            # Save questions to database
-            saved_questions = []
-            for q in questions_list:
-                if isinstance(q, dict) and 'question' in q:
-                    category = q.get('category', 'General')
-                    question_id = db.save_interview_question(candidate_id, q['question'], category)
-                    if question_id:
-                        saved_questions.append({
-                            'id': question_id,
-                            'candidate_id': candidate_id,
-                            'question': q['question'],
-                            'category': category,
-                            'created_at': None
-                        })
-
-            return jsonify({'questions': saved_questions}), 200
-
-        except json.JSONDecodeError as e:
-            print(f"JSON decode error: {e}")
-            print(f"Response text: {response_text}")
-            # Fallback: create generic questions
-            fallback_questions = [
-                {"question": "Can you walk me through your most challenging technical project?", "category": "Technical"},
-                {"question": "Describe a time you had to learn a new technology quickly. How did you approach it?", "category": "Behavioral"},
-                {"question": "What do you consider your biggest professional achievement?", "category": "Behavioral"},
-                {"question": "How do you handle disagreements with team members on technical decisions?", "category": "Cultural"},
-            ]
-            for q in fallback_questions:
-                question_id = db.save_interview_question(candidate_id, q['question'], q['category'])
-                q['id'] = question_id
-                q['candidate_id'] = candidate_id
-                q['created_at'] = None
-
-            return jsonify({'questions': fallback_questions}), 200
+        return jsonify({'questions': saved_questions}), 200
 
     except Exception as e:
         print(f"Error generating interview questions: {e}")
@@ -591,9 +558,13 @@ def generate_ai_job_post():
         location = data.get('location')
         additional_info = data.get('additional_info')
 
-        # Check API key
-        if not os.getenv('GROQ_API_KEY'):
-            return jsonify({'error': 'GROQ_API_KEY environment variable is missing'}), 500
+        # Check API key using centralized config
+        try:
+            config = get_config()
+            if not config.llm.api_key:
+                return jsonify({'error': f'{config.llm_provider.upper()}_API_KEY environment variable is missing'}), 500
+        except Exception as e:
+            return jsonify({'error': f'Configuration error: {str(e)}'}), 500
 
         # Generate job post using AI
         generated = generate_job_post(
