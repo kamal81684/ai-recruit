@@ -8,6 +8,9 @@ Architecture improvements:
 - Global exception handling with standardized error responses
 - Request ID tracking for debugging
 - Input validation with Pydantic models
+- Phase 3: Retry mechanisms with exponential backoff
+- Phase 3: Dead Letter Queue for failed requests
+- Phase 3: Input sanitization for prompt injection protection
 
 Contributor: shubham21155102
 """
@@ -31,6 +34,19 @@ import os
 import psycopg2.extras
 from io import BytesIO
 import logging
+
+# Import input sanitization module (Phase 3)
+try:
+    from input_sanitizer import (
+        sanitize_job_description,
+        sanitize_resume_text,
+        sanitize_additional_info
+    )
+    SANITIZATION_ENABLED = True
+except ImportError:
+    SANITIZATION_ENABLED = False
+    logger = logging.getLogger(__name__)
+    logger.warning("Input sanitization module not available, running without sanitization checks")
 
 app = Flask(__name__)
 
@@ -111,6 +127,19 @@ def evaluate_candidate():
 
         # Extract text from PDF
         resume_text = extract_text_from_pdf(pdf_bytes)
+
+        # Phase 3: Input sanitization for prompt injection protection
+        if SANITIZATION_ENABLED:
+            try:
+                job_description = sanitize_job_description(job_description)
+                resume_text = sanitize_resume_text(resume_text)
+                logger.info("Input sanitization completed successfully")
+            except ValueError as sanitization_error:
+                logger.warning(f"Input sanitization failed: {sanitization_error}")
+                return jsonify({
+                    'error': f'Input validation failed: {str(sanitization_error)}',
+                    'code': 'SANITIZATION_ERROR'
+                }), 400
 
         # Extract candidate information using AI
         print("🔍 Extracting candidate information from resume...")

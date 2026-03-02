@@ -11,6 +11,12 @@ Supported providers:
 - Anthropic
 - Custom (LangChain-compatible)
 
+Phase 3 Enhancements:
+- Integrated retry mechanisms with exponential backoff
+- Dead Letter Queue for failed requests
+- Input sanitization for prompt injection protection
+- Circuit breaker pattern for service resilience
+
 Contributor: shubham21155102
 """
 
@@ -18,6 +24,11 @@ from abc import ABC, abstractmethod
 from typing import Any, Optional
 from pydantic import BaseModel
 import os
+import logging
+import time
+import hashlib
+
+logger = logging.getLogger(__name__)
 
 # Import provider-specific SDKs
 try:
@@ -38,6 +49,14 @@ except ImportError:
     ChatAnthropic = None
 
 from config import get_config
+
+# Import resilience modules (Phase 3)
+try:
+    from resilience import RetryConfig, retry_with_backoff, get_dlq
+    RESILIENCE_ENABLED = True
+except ImportError:
+    RESILIENCE_ENABLED = False
+    logger.warning("Resilience module not available, running without retry logic")
 
 
 # =============================================================================
@@ -150,6 +169,16 @@ class BaseLLMProvider(ABC):
 class GroqProvider(BaseLLMProvider):
     """Groq LLM provider using LangChain integration."""
 
+    def __init__(self, api_key: str, model: str, temperature: float = 0.0, max_tokens: int = 2048):
+        super().__init__(api_key, model, temperature, max_tokens)
+        self._retry_config = RetryConfig(
+            max_attempts=3,
+            base_delay=1.0,
+            max_delay=30.0,
+            exponential_base=2.0,
+            strategy=RetryConfig.EXPONENTIAL_BACKOFF if hasattr(RetryConfig, 'EXPONENTIAL_BACKOFF') else "exponential_backoff"
+        )
+
     def get_llm(self):
         """Get the ChatGroq instance."""
         if ChatGroq is None:
@@ -162,15 +191,25 @@ class GroqProvider(BaseLLMProvider):
         )
 
     def evaluate_resume(self, resume_text: str, jd_text: str) -> CandidateEvaluation:
-        """Evaluate resume using Groq LLM."""
+        """
+        Evaluate resume using Groq LLM with retry logic.
+
+        This method includes automatic retry with exponential backoff for transient failures.
+        Failed requests are logged to the Dead Letter Queue for manual review.
+        """
         if ChatPromptTemplate is None:
             raise ImportError("langchain-core is not installed")
 
-        llm = self.get_llm()
-        structured_llm = llm.with_structured_output(CandidateEvaluation)
+        # Generate a request ID for tracking
+        request_id = hashlib.md5(f"{resume_text[:100]}{jd_text[:100]}".encode()).hexdigest()[:16]
 
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an expert technical recruiter and hiring manager.
+        def _do_evaluate():
+            """Internal evaluation method that will be retried."""
+            llm = self.get_llm()
+            structured_llm = llm.with_structured_output(CandidateEvaluation)
+
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", """You are an expert technical recruiter and hiring manager.
 Your task is to evaluate a candidate's resume against a job description (JD).
 You must provide rigorous, multi-dimensional scores (0-100) and detailed explanations.
 
@@ -186,11 +225,55 @@ Tier Classification:
 - Tier C (Needs Evaluation): Weak match, missing core skills and no related experience.
 
 Be very objective and critical."""),
-            ("human", "Job Description:\n{jd_text}\n\nCandidate Resume:\n{resume_text}")
-        ])
+                ("human", "Job Description:\n{jd_text}\n\nCandidate Resume:\n{resume_text}")
+            ])
 
-        chain = prompt | structured_llm
-        return chain.invoke({"jd_text": jd_text, "resume_text": resume_text})
+            chain = prompt | structured_llm
+            return chain.invoke({"jd_text": jd_text, "resume_text": resume_text})
+
+        # Use retry logic if resilience module is available
+        if RESILIENCE_ENABLED:
+            last_exception = None
+            for attempt in range(self._retry_config.max_attempts):
+                try:
+                    return _do_evaluate()
+                except Exception as e:
+                    last_exception = e
+                    if attempt < self._retry_config.max_attempts - 1:
+                        delay = self._calculate_delay(attempt)
+                        logger.warning(
+                            f"Groq API call failed (attempt {attempt + 1}/{self._retry_config.max_attempts}). "
+                            f"Retrying in {delay:.2f}s. Error: {str(e)}"
+                        )
+                        time.sleep(delay)
+                    else:
+                        # Final attempt failed - add to DLQ
+                        dlq = get_dlq()
+                        dlq.add(
+                            endpoint="evaluate_resume",
+                            method="GROQ_LLM_CALL",
+                            payload={
+                                "request_id": request_id,
+                                "resume_length": len(resume_text),
+                                "jd_length": len(jd_text)
+                            },
+                            error_message=str(e),
+                            error_type=type(e).__name__,
+                            retry_count=self._retry_config.max_attempts
+                        )
+                        logger.error(
+                            f"Groq API call failed after {self._retry_config.max_attempts} attempts. "
+                            f"Added to DLQ. Request ID: {request_id}"
+                        )
+            raise last_exception
+        else:
+            # Fallback to direct call without retry
+            return _do_evaluate()
+
+    def _calculate_delay(self, attempt: int) -> float:
+        """Calculate retry delay with exponential backoff."""
+        delay = self._retry_config.base_delay * (2.0 ** attempt)
+        return min(delay, self._retry_config.max_delay)
 
     def generate_job_post(
         self,

@@ -97,6 +97,24 @@ class Database:
                 )
             """)
 
+            # Create dead_letter_queue table for Phase 3 resilience
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS dead_letter_queue (
+                    id SERIAL PRIMARY KEY,
+                    request_id VARCHAR(255) UNIQUE NOT NULL,
+                    endpoint VARCHAR(255) NOT NULL,
+                    method VARCHAR(50) NOT NULL,
+                    payload JSONB NOT NULL,
+                    error_message TEXT NOT NULL,
+                    error_type VARCHAR(255) NOT NULL,
+                    retry_count INTEGER DEFAULT 0,
+                    status VARCHAR(50) DEFAULT 'pending',
+                    last_retry_attempt TIMESTAMP,
+                    resolved_at TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             # Create index for faster queries
             self.cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_candidates_tier ON candidates(tier)
@@ -124,6 +142,15 @@ class Database:
             """)
             self.cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_job_posts_created_at ON job_posts(created_at DESC)
+            """)
+            self.cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_dlq_status ON dead_letter_queue(status)
+            """)
+            self.cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_dlq_created_at ON dead_letter_queue(created_at DESC)
+            """)
+            self.cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_dlq_endpoint ON dead_letter_queue(endpoint)
             """)
 
             self.conn.commit()
@@ -557,6 +584,258 @@ class Database:
             print(f"❌ Failed to delete interview questions: {e}")
             self.conn.rollback()
             return False
+
+    # =============================================================================
+    # Dead Letter Queue Methods (Phase 3: Resilience)
+    # =============================================================================
+
+    def save_to_dlq(
+        self,
+        request_id: str,
+        endpoint: str,
+        method: str,
+        payload: Dict,
+        error_message: str,
+        error_type: str,
+        retry_count: int = 0
+    ) -> Optional[int]:
+        """
+        Save a failed request to the Dead Letter Queue.
+
+        Args:
+            request_id: Unique identifier for the request
+            endpoint: API endpoint or function name
+            method: HTTP method or function identifier
+            payload: Request payload (will be stored as JSONB)
+            error_message: Error message
+            error_type: Type of error
+            retry_count: Number of retries already attempted
+
+        Returns:
+            dlq_id if successful, None otherwise
+        """
+        try:
+            self.cursor.execute("""
+                INSERT INTO dead_letter_queue (
+                    request_id, endpoint, method, payload,
+                    error_message, error_type, retry_count
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (request_id) DO UPDATE SET
+                    error_message = EXCLUDED.error_message,
+                    retry_count = EXCLUDED.retry_count + 1,
+                    last_retry_attempt = CURRENT_TIMESTAMP
+                RETURNING id
+            """, (
+                request_id, endpoint, method,
+                json.dumps(payload) if isinstance(payload, dict) else payload,
+                error_message, error_type, retry_count
+            ))
+
+            dlq_id = self.cursor.fetchone()['id']
+            self.conn.commit()
+            print(f"⚠️ Request added to DLQ with ID: {dlq_id}")
+            return dlq_id
+
+        except Exception as e:
+            print(f"❌ Failed to save to DLQ: {e}")
+            self.conn.rollback()
+            return None
+
+    def get_dlq_entries(
+        self,
+        status: str = None,
+        limit: int = 50,
+        offset: int = 0
+    ) -> List[Dict]:
+        """
+        Get Dead Letter Queue entries with optional status filter.
+
+        Args:
+            status: Filter by status ('pending', 'processing', 'resolved', 'failed')
+            limit: Number of results
+            offset: Pagination offset
+
+        Returns:
+            List of DLQ entries
+        """
+        try:
+            cursor = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            if status:
+                cursor.execute("""
+                    SELECT id, request_id, endpoint, method, payload,
+                           error_message, error_type, retry_count, status,
+                           last_retry_attempt, created_at
+                    FROM dead_letter_queue
+                    WHERE status = %s
+                    ORDER BY created_at DESC
+                    LIMIT %s OFFSET %s
+                """, (status, limit, offset))
+            else:
+                cursor.execute("""
+                    SELECT id, request_id, endpoint, method, payload,
+                           error_message, error_type, retry_count, status,
+                           last_retry_attempt, created_at
+                    FROM dead_letter_queue
+                    ORDER BY created_at DESC
+                    LIMIT %s OFFSET %s
+                """, (limit, offset))
+
+            entries = cursor.fetchall()
+            cursor.close()
+            return [dict(entry) for entry in entries]
+
+        except Exception as e:
+            print(f"❌ Failed to fetch DLQ entries: {e}")
+            return []
+
+    def get_dlq_by_id(self, dlq_id: int) -> Optional[Dict]:
+        """Get a specific DLQ entry by ID"""
+        try:
+            cursor = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute("""
+                SELECT id, request_id, endpoint, method, payload,
+                       error_message, error_type, retry_count, status,
+                       last_retry_attempt, resolved_at, created_at
+                FROM dead_letter_queue
+                WHERE id = %s
+            """, (dlq_id,))
+
+            entry = cursor.fetchone()
+            cursor.close()
+            return dict(entry) if entry else None
+
+        except Exception as e:
+            print(f"❌ Failed to fetch DLQ entry: {e}")
+            return None
+
+    def update_dlq_status(
+        self,
+        dlq_id: int,
+        status: str,
+        error_message: str = None
+    ) -> bool:
+        """
+        Update the status of a DLQ entry.
+
+        Args:
+            dlq_id: DLQ entry ID
+            status: New status ('pending', 'processing', 'resolved', 'failed')
+            error_message: Optional new error message
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if status == 'resolved':
+                query = """
+                    UPDATE dead_letter_queue
+                    SET status = %s, resolved_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                """
+                self.cursor.execute(query, (status, dlq_id))
+            elif error_message:
+                query = """
+                    UPDATE dead_letter_queue
+                    SET status = %s, error_message = %s,
+                        retry_count = retry_count + 1,
+                        last_retry_attempt = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                """
+                self.cursor.execute(query, (status, error_message, dlq_id))
+            else:
+                query = """
+                    UPDATE dead_letter_queue
+                    SET status = %s, last_retry_attempt = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                """
+                self.cursor.execute(query, (status, dlq_id))
+
+            self.conn.commit()
+            print(f"✅ DLQ entry {dlq_id} status updated to {status}")
+            return True
+
+        except Exception as e:
+            print(f"❌ Failed to update DLQ status: {e}")
+            self.conn.rollback()
+            return False
+
+    def delete_dlq_entry(self, dlq_id: int) -> bool:
+        """Delete a DLQ entry by ID"""
+        try:
+            self.cursor.execute("DELETE FROM dead_letter_queue WHERE id = %s", (dlq_id,))
+            self.conn.commit()
+            print(f"✅ DLQ entry {dlq_id} deleted")
+            return True
+
+        except Exception as e:
+            print(f"❌ Failed to delete DLQ entry: {e}")
+            self.conn.rollback()
+            return False
+
+    def get_dlq_statistics(self) -> Dict:
+        """Get Dead Letter Queue statistics"""
+        try:
+            cursor = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            # Total entries
+            cursor.execute("SELECT COUNT(*) as total FROM dead_letter_queue")
+            total = cursor.fetchone()['total']
+
+            # By status
+            cursor.execute("""
+                SELECT status, COUNT(*) as count
+                FROM dead_letter_queue
+                GROUP BY status
+            """)
+            by_status = {row['status']: row['count'] for row in cursor.fetchall()}
+
+            # By error type
+            cursor.execute("""
+                SELECT error_type, COUNT(*) as count
+                FROM dead_letter_queue
+                WHERE status != 'resolved'
+                GROUP BY error_type
+                ORDER BY count DESC
+                LIMIT 10
+            """)
+            by_error_type = {row['error_type']: row['count'] for row in cursor.fetchall()}
+
+            # By endpoint
+            cursor.execute("""
+                SELECT endpoint, COUNT(*) as count
+                FROM dead_letter_queue
+                WHERE status != 'resolved'
+                GROUP BY endpoint
+                ORDER BY count DESC
+                LIMIT 10
+            """)
+            by_endpoint = {row['endpoint']: row['count'] for row in cursor.fetchall()}
+
+            # Average retry count
+            cursor.execute("""
+                SELECT AVG(retry_count) as avg_retries
+                FROM dead_letter_queue
+                WHERE status != 'resolved'
+            """)
+            avg_retries = cursor.fetchone()['avg_retries'] or 0
+
+            cursor.close()
+
+            return {
+                'total_entries': total,
+                'by_status': by_status,
+                'by_error_type': by_error_type,
+                'by_endpoint': by_endpoint,
+                'average_retries': round(float(avg_retries), 2),
+                'pending_count': by_status.get('pending', 0) + by_status.get('processing', 0)
+            }
+
+        except Exception as e:
+            print(f"❌ Failed to fetch DLQ statistics: {e}")
+            return {}
 
 
 # Singleton instance
