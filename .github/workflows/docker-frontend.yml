@@ -43,6 +43,11 @@ jobs:
           cd frontend
           npm ci
 
+      - name: Run tests
+        run: |
+          cd frontend
+          npm test
+
       - name: Build Next.js application
         run: |
           cd frontend
