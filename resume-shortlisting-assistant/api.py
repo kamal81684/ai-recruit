@@ -18,6 +18,7 @@ Contributor: shubham21155102
 from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
 from engine import extract_text_from_pdf, evaluate_resume, generate_job_post
+from rate_limiter import rate_limit, ENDPOINT_LIMITS
 from database import db, init_database
 from resume_parser import extract_candidate_info
 from config import get_config
@@ -90,6 +91,7 @@ def health_check():
     return jsonify({'status': 'ok', 'message': 'API is running'})
 
 @app.route('/api/evaluate', methods=['POST'])
+@rate_limit(requests=10, window=60)  # 10 evaluations per minute
 def evaluate_candidate():
     """
     Evaluate a candidate's resume against a job description.
@@ -279,6 +281,7 @@ def get_interview_questions(candidate_id):
         return jsonify({'error': f'Failed to fetch interview questions: {str(e)}'}), 500
 
 @app.route('/api/candidates/<int:candidate_id>/interview-questions', methods=['POST'])
+@rate_limit(requests=10, window=60)  # 10 interview question generations per minute
 def generate_interview_questions(candidate_id):
     """
     Generate AI-powered interview questions for a candidate.
@@ -570,6 +573,7 @@ def get_analytics():
         return jsonify({'error': f'Failed to fetch analytics: {str(e)}'}), 500
 
 @app.route('/api/jobs/generate-ai', methods=['POST'])
+@rate_limit(requests=5, window=60)  # 5 job generations per minute
 def generate_ai_job_post():
     """
     Generate a job post using AI based on title and optional details.
@@ -726,6 +730,216 @@ def analyze_skill_gap():
     except Exception as e:
         logger.error(f"Failed to analyze skill gap: {e}")
         raise
+
+@app.route('/api/candidates/ranking', methods=['GET'])
+def get_candidates_ranking():
+    """
+    Get candidates ranked by their match score (leaderboard).
+
+    Query params:
+    - limit: number of results (default: 20)
+    - tier: filter by tier (optional)
+    - sort_by: sorting method (default: 'overall_score')
+      Options: 'overall_score', 'exact_match', 'similarity_match', 'achievement_impact', 'ownership'
+    - order: sort order (default: 'desc')
+      Options: 'asc', 'desc'
+
+    Returns a ranked list of candidates with their positions and scores.
+    """
+    try:
+        limit = int(request.args.get('limit', 20))
+        tier = request.args.get('tier')
+        sort_by = request.args.get('sort_by', 'overall_score')
+        order = request.args.get('order', 'desc')
+
+        # Validate sort_by parameter
+        valid_sort_options = [
+            'overall_score', 'exact_match', 'similarity_match',
+            'achievement_impact', 'ownership'
+        ]
+        if sort_by not in valid_sort_options:
+            return jsonify({
+                'error': f'Invalid sort_by option. Must be one of: {", ".join(valid_sort_options)}'
+            }), 400
+
+        # Validate order parameter
+        if order not in ['asc', 'desc']:
+            return jsonify({'error': 'Invalid order option. Must be "asc" or "desc"'}), 400
+
+        # Get candidates with their scores
+        cursor = db.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        # Build query based on tier filter
+        base_query = """
+            SELECT
+                id, name, email, phone, location, skills, education,
+                current_role, experience_years, tier, summary,
+                exact_match_score, similarity_match_score,
+                achievement_impact_score, ownership_score,
+                resume_filename, created_at
+            FROM candidates
+        """
+        params = []
+
+        if tier:
+            base_query += " WHERE tier = %s"
+            params.append(tier)
+
+        # Execute query
+        cursor.execute(base_query, params)
+        candidates = cursor.fetchall()
+        cursor.close()
+
+        # Calculate overall score for each candidate
+        ranked_candidates = []
+        for candidate in candidates:
+            scores = [
+                candidate.get('exact_match_score', 0) or 0,
+                candidate.get('similarity_match_score', 0) or 0,
+                candidate.get('achievement_impact_score', 0) or 0,
+                candidate.get('ownership_score', 0) or 0
+            ]
+            # Filter out any None or invalid values
+            valid_scores = [s for s in scores if s is not None and isinstance(s, (int, float))]
+            overall_score = sum(valid_scores) / len(valid_scores) if valid_scores else 0
+
+            ranked_candidates.append({
+                'id': candidate['id'],
+                'name': candidate.get('name', 'Unknown'),
+                'email': candidate.get('email'),
+                'current_role': candidate.get('current_role'),
+                'location': candidate.get('location'),
+                'tier': candidate.get('tier'),
+                'overall_score': round(overall_score, 2),
+                'exact_match_score': candidate.get('exact_match_score', 0) or 0,
+                'similarity_match_score': candidate.get('similarity_match_score', 0) or 0,
+                'achievement_impact_score': candidate.get('achievement_impact_score', 0) or 0,
+                'ownership_score': candidate.get('ownership_score', 0) or 0,
+                'resume_filename': candidate.get('resume_filename'),
+                'created_at': candidate.get('created_at').isoformat() if candidate.get('created_at') else None
+            })
+
+        # Sort candidates based on sort_by parameter
+        reverse = (order == 'desc')
+        ranked_candidates.sort(key=lambda x: x.get(sort_by, 0), reverse=reverse)
+
+        # Apply limit
+        ranked_candidates = ranked_candidates[:limit]
+
+        # Assign rankings
+        for idx, candidate in enumerate(ranked_candidates, 1):
+            candidate['rank'] = idx
+
+        # Calculate statistics
+        if ranked_candidates:
+            avg_scores = {
+                'overall_score': round(sum(c['overall_score'] for c in ranked_candidates) / len(ranked_candidates), 2),
+                'exact_match': round(sum(c['exact_match_score'] for c in ranked_candidates) / len(ranked_candidates), 2),
+                'similarity_match': round(sum(c['similarity_match_score'] for c in ranked_candidates) / len(ranked_candidates), 2),
+                'achievement_impact': round(sum(c['achievement_impact_score'] for c in ranked_candidates) / len(ranked_candidates), 2),
+                'ownership': round(sum(c['ownership_score'] for c in ranked_candidates) / len(ranked_candidates), 2),
+            }
+        else:
+            avg_scores = {
+                'overall_score': 0,
+                'exact_match': 0,
+                'similarity_match': 0,
+                'achievement_impact': 0,
+                'ownership': 0,
+            }
+
+        return jsonify({
+            'ranked_candidates': ranked_candidates,
+            'count': len(ranked_candidates),
+            'statistics': avg_scores,
+            'filters': {
+                'tier': tier,
+                'sort_by': sort_by,
+                'order': order
+            }
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Failed to get candidates ranking: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to get candidates ranking: {str(e)}'}), 500
+
+@app.route('/api/resume/rewrite', methods=['POST'])
+@rate_limit(requests=5, window=60)  # 5 rewrites per minute
+def rewrite_resume():
+    """
+    Rewrite a resume to better match a job description.
+
+    This endpoint helps candidates optimize their resume for a specific
+    job by providing AI-powered suggestions for improvements.
+
+    Expected JSON body:
+    - resume_text: string (required) - Original resume text
+    - job_description: string (required) - Target job description
+    - job_title: string (required) - Target job title
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'Request body is required'}), 400
+
+        resume_text = data.get('resume_text')
+        job_description = data.get('job_description')
+        job_title = data.get('job_title')
+
+        if not resume_text or not job_description or not job_title:
+            return jsonify({
+                'error': 'resume_text, job_description, and job_title are required'
+            }), 400
+
+        # Check API key using centralized config
+        try:
+            config = get_config()
+            if not config.llm.api_key:
+                return jsonify({
+                    'error': f'{config.llm_provider.upper()}_API_KEY environment variable is missing'
+                }), 500
+        except Exception as e:
+            return jsonify({'error': f'Configuration error: {str(e)}'}), 500
+
+        # Phase 3: Input sanitization
+        if SANITIZATION_ENABLED:
+            try:
+                job_description = sanitize_job_description(job_description)
+                resume_text = sanitize_resume_text(resume_text)
+                logger.info("Input sanitization completed successfully for resume rewrite")
+            except ValueError as sanitization_error:
+                logger.warning(f"Input sanitization failed: {sanitization_error}")
+                return jsonify({
+                    'error': f'Input validation failed: {str(sanitization_error)}',
+                    'code': 'SANITIZATION_ERROR'
+                }), 400
+
+        # Generate resume rewrite using the provider abstraction
+        from llm_providers import get_provider
+
+        provider = get_provider()
+        result = provider.rewrite_resume_for_job(
+            resume_text=resume_text,
+            job_description=job_description,
+            job_title=job_title
+        )
+
+        return jsonify({
+            'improved_summary': result.get('improved_summary', ''),
+            'suggested_bullets': result.get('suggested_bullets', []),
+            'skills_to_highlight': result.get('skills_to_highlight', []),
+            'keywords_to_add': result.get('keywords_to_add', []),
+            'cover_letter_suggestion': result.get('cover_letter_suggestion', '')
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error rewriting resume: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to rewrite resume: {str(e)}'}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))

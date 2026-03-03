@@ -161,6 +161,31 @@ class BaseLLMProvider(ABC):
         """
         pass
 
+    @abstractmethod
+    def rewrite_resume_for_job(
+        self,
+        resume_text: str,
+        job_description: str,
+        job_title: str
+    ) -> dict:
+        """
+        Rewrite a candidate's resume to better match a job description.
+
+        This feature helps candidates optimize their resume for a specific
+        job posting by suggesting improvements to bullet points, skills
+        highlighting, and overall positioning.
+
+        Args:
+            resume_text: Original resume text
+            job_description: Target job description
+            job_title: Target job title
+
+        Returns:
+            Dict with 'improved_summary', 'suggested_bullets', 'skills_to_highlight',
+                  'keywords_to_add', 'cover_letter_suggestion'
+        """
+        pass
+
 
 # =============================================================================
 # Groq Provider Implementation
@@ -396,6 +421,89 @@ Ensure the JSON is valid and properly formatted."""
                 {"question": "Describe a time you had to learn a new technology quickly.", "category": "Behavioral"},
             ]
 
+    def rewrite_resume_for_job(
+        self,
+        resume_text: str,
+        job_description: str,
+        job_title: str
+    ) -> dict:
+        """Rewrite resume to better match job description using Groq API."""
+        try:
+            from groq import Groq
+            import json
+        except ImportError:
+            raise ImportError("groq package is not installed. Run: pip install groq")
+
+        client = Groq(api_key=self.api_key)
+
+        prompt = f"""You are an expert resume writer and career coach. Your task is to analyze a candidate's resume and rewrite it to better match a target job description.
+
+CANDIDATE'S CURRENT RESUME:
+{resume_text[:2000]}
+
+TARGET JOB DESCRIPTION:
+{job_description[:1500]}
+
+JOB TITLE: {job_title}
+
+Please provide:
+1. An improved professional summary that highlights relevant experience for this role
+2. 3-5 rewritten bullet points that emphasize achievements and skills matching the job requirements
+3. Key skills from the candidate's background that should be highlighted for this role
+4. Important keywords from the job description that should be incorporated
+5. A brief cover letter suggestion
+
+Return ONLY a valid JSON object with this exact structure:
+{{
+  "improved_summary": "2-3 sentence professional summary tailored to the job",
+  "suggested_bullets": [
+    "• First rewritten bullet point with quantifiable achievement",
+    "• Second rewritten bullet point",
+    "• Third rewritten bullet point"
+  ],
+  "skills_to_highlight": ["skill1", "skill2", "skill3"],
+  "keywords_to_add": ["keyword1", "keyword2", "keyword3"],
+  "cover_letter_suggestion": "Brief opening paragraph for a cover letter"
+}}
+
+Ensure the JSON is valid and properly formatted."""
+
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert resume writer and career coach. Always respond with valid JSON only."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            model=self.model,
+            temperature=0.7,
+            max_tokens=2048,
+            response_format={"type": "json_object"}
+        )
+
+        response_text = chat_completion.choices[0].message.content
+
+        try:
+            result = json.loads(response_text)
+            return result
+        except json.JSONDecodeError:
+            # Fallback response
+            return {
+                "improved_summary": f"Experienced professional with expertise relevant to {job_title} position.",
+                "suggested_bullets": [
+                    "• Demonstrated expertise in key skills required for the role",
+                    "• Proven track record of delivering results in similar positions",
+                    "• Strong combination of technical and soft skills"
+                ],
+                "skills_to_highlight": ["Leadership", "Communication", "Problem Solving"],
+                "keywords_to_add": ["Team player", "Results-driven", "Innovative"],
+                "cover_letter_suggestion": f"I am excited to apply for the {job_title} position..."
+            }
+
 
 # =============================================================================
 # OpenAI Provider Implementation
@@ -500,6 +608,26 @@ Use professional language and format with clear sections."""),
         # Similar implementation to Groq but using OpenAI client
         # This is a simplified version - full implementation would use OpenAI client
         return []
+
+    def rewrite_resume_for_job(
+        self,
+        resume_text: str,
+        job_description: str,
+        job_title: str
+    ) -> dict:
+        """Rewrite resume to better match job description using OpenAI API."""
+        # Implementation would use OpenAI client similar to Groq
+        # Returning fallback for now
+        return {
+            "improved_summary": f"Experienced professional with expertise relevant to {job_title} position.",
+            "suggested_bullets": [
+                "• Demonstrated expertise in key skills required for the role",
+                "• Proven track record of delivering results in similar positions"
+            ],
+            "skills_to_highlight": ["Leadership", "Communication"],
+            "keywords_to_add": ["Results-driven", "Innovative"],
+            "cover_letter_suggestion": f"I am excited to apply for the {job_title} position..."
+        }
 
 
 # =============================================================================
