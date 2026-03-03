@@ -46,7 +46,7 @@ jobs:
       - name: Run tests
         run: |
           cd resume-shortlisting-assistant
-          pytest test_engine.py -v || echo "No tests found, skipping..."
+          pytest test_engine.py -v --tb=short
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3

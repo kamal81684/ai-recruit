@@ -1,6 +1,6 @@
 import streamlit as st
 from engine import extract_text_from_pdf, evaluate_resume
-import os
+from config import get_config
 
 st.set_page_config(page_title="AI Resume Shortlisting Assistant", page_icon="📄", layout="wide")
 
@@ -25,8 +25,16 @@ with st.container():
     if st.button("Evaluate Candidate", type="primary"):
         if not jd_input or not resume_pdf:
             st.error("Please provide both a Job Description and a Resume.")
-        elif not os.getenv("GROQ_API_KEY"):
-            st.error("GROQ_API_KEY environment variable is missing. Please set it to proceed.")
+        else:
+            # Check API key using centralized config
+            try:
+                config = get_config()
+                if not config.llm.api_key:
+                    st.error(f"{config.llm_provider.upper()}_API_KEY environment variable is missing. Please set it to proceed.")
+                    st.stop()
+            except Exception as e:
+                st.error(f"Configuration error: {str(e)}")
+                st.stop()
         else:
             with st.spinner("Analyzing candidate profile... This may take a few seconds."):
                 try:

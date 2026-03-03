@@ -1,21 +1,99 @@
 """
 Flask API server for AI Resume Shortlisting Assistant
 This server provides REST API endpoints that the Next.js frontend can call.
+
+Architecture improvements:
+- Configuration managed through centralized config module
+- Provider-agnostic LLM interactions
+- Global exception handling with standardized error responses
+- Request ID tracking for debugging
+- Input validation with Pydantic models
+- Phase 3: Retry mechanisms with exponential backoff
+- Phase 3: Dead Letter Queue for failed requests
+- Phase 3: Input sanitization for prompt injection protection
+- Phase 6: API versioning support (/api/v1/)
+- Phase 6: Enterprise-grade security headers
+- Phase 6: PII redaction for enhanced privacy
+
+Contributor: shubham21155102
 """
 
-from flask import Flask, request, jsonify, make_response
+from flask import Flask, request, jsonify, make_response, g
 from flask_cors import CORS
 from engine import extract_text_from_pdf, evaluate_resume, generate_job_post
+from rate_limiter import rate_limit, ENDPOINT_LIMITS
 from database import db, init_database
 from resume_parser import extract_candidate_info
+from config import get_config
+from error_handlers import (
+    register_error_handlers,
+    init_request_tracking,
+    ValidationError,
+    NotFoundError,
+    ConfigurationError,
+    FileProcessingError,
+    get_request_id
+)
 import os
 import psycopg2.extras
 from io import BytesIO
+import logging
+
+# Phase 6: Import security headers and API versioning modules
+try:
+    from security_headers import register_security_headers, setup_csp_reporting
+    from api_versioning import register_version_redirects, add_version_headers, API_VERSIONS
+    from pii_redaction import PIIRedactor, sanitize_for_logging
+    SECURITY_ENABLED = True
+except ImportError as e:
+    SECURITY_ENABLED = False
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Phase 6 security modules not available: {e}")
+
+# Import input sanitization module (Phase 3)
+try:
+    from input_sanitizer import (
+        sanitize_job_description,
+        sanitize_resume_text,
+        sanitize_additional_info
+    )
+    SANITIZATION_ENABLED = True
+except ImportError:
+    SANITIZATION_ENABLED = False
+    logger = logging.getLogger(__name__)
+    logger.warning("Input sanitization module not available, running without sanitization checks")
 
 app = Flask(__name__)
 
-# Configure CORS for Next.js frontend - Allow specific origins
-CORS(app, resources={r"/*": {"origins": ["http://localhost:3000", "https://ai-recruit-two.vercel.app"]}})
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Load configuration
+try:
+    config = get_config()
+    # Configure CORS using centralized config
+    CORS(app, resources={r"/*": {"origins": config.cors_origins}})
+except Exception as e:
+    logger.warning(f"Warning: Could not load configuration: {e}")
+    # Fallback to default origins
+    CORS(app, resources={r"/*": {"origins": ["http://localhost:3000", "https://ai-recruit-two.vercel.app"]}})
+
+# Register error handlers and request tracking
+register_error_handlers(app)
+init_request_tracking(app)
+
+# Phase 6: Register security headers middleware
+if SECURITY_ENABLED:
+    environment = os.environ.get('FLASK_ENV', 'production')
+    register_security_headers(app, environment=environment)
+    setup_csp_reporting(app)
+    # Register version redirects and info endpoint
+    register_version_redirects(app)
+    logger.info("Phase 6 security features enabled: security headers, API versioning")
 
 # Add cache control headers to all responses
 @app.after_request
@@ -24,6 +102,11 @@ def add_headers(response):
     response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
+
+    # Phase 6: Add API version headers to responses
+    if SECURITY_ENABLED and hasattr(g, 'api_version'):
+        add_version_headers(response, g.api_version)
+
     return response
 
 # Initialize database on startup
@@ -32,10 +115,26 @@ if not init_database():
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
-    return jsonify({'status': 'ok', 'message': 'API is running'})
+    """Health check endpoint with version information"""
+    response_data = {
+        'status': 'ok',
+        'message': 'API is running',
+        'version': '1.0.0',
+        'api_version': 'v1'
+    }
+
+    # Add security features status
+    if SECURITY_ENABLED:
+        response_data['security_features'] = {
+            'security_headers': 'enabled',
+            'api_versioning': 'enabled',
+            'pii_redaction': 'enabled'
+        }
+
+    return jsonify(response_data)
 
 @app.route('/api/evaluate', methods=['POST'])
+@rate_limit(requests=10, window=60)  # 10 evaluations per minute
 def evaluate_candidate():
     """
     Evaluate a candidate's resume against a job description.
@@ -56,9 +155,13 @@ def evaluate_candidate():
         if not resume_file:
             return jsonify({'error': 'Resume file is required'}), 400
 
-        # Check API key
-        if not os.getenv('GROQ_API_KEY'):
-            return jsonify({'error': 'GROQ_API_KEY environment variable is missing'}), 500
+        # Check API key using centralized config
+        try:
+            config = get_config()
+            if not config.llm.api_key:
+                return jsonify({'error': f'{config.llm_provider.upper()}_API_KEY environment variable is missing'}), 500
+        except Exception as e:
+            return jsonify({'error': f'Configuration error: {str(e)}'}), 500
 
         # Check file type
         if not resume_file.filename.endswith('.pdf'):
@@ -69,6 +172,19 @@ def evaluate_candidate():
 
         # Extract text from PDF
         resume_text = extract_text_from_pdf(pdf_bytes)
+
+        # Phase 3: Input sanitization for prompt injection protection
+        if SANITIZATION_ENABLED:
+            try:
+                job_description = sanitize_job_description(job_description)
+                resume_text = sanitize_resume_text(resume_text)
+                logger.info("Input sanitization completed successfully")
+            except ValueError as sanitization_error:
+                logger.warning(f"Input sanitization failed: {sanitization_error}")
+                return jsonify({
+                    'error': f'Input validation failed: {str(sanitization_error)}',
+                    'code': 'SANITIZATION_ERROR'
+                }), 400
 
         # Extract candidate information using AI
         print("🔍 Extracting candidate information from resume...")
@@ -208,15 +324,20 @@ def get_interview_questions(candidate_id):
         return jsonify({'error': f'Failed to fetch interview questions: {str(e)}'}), 500
 
 @app.route('/api/candidates/<int:candidate_id>/interview-questions', methods=['POST'])
+@rate_limit(requests=10, window=60)  # 10 interview question generations per minute
 def generate_interview_questions(candidate_id):
     """
     Generate AI-powered interview questions for a candidate.
     This will replace any existing questions for this candidate.
     """
     try:
-        # Check API key
-        if not os.getenv('GROQ_API_KEY'):
-            return jsonify({'error': 'GROQ_API_KEY environment variable is missing'}), 500
+        # Check API key using centralized config
+        try:
+            config = get_config()
+            if not config.llm.api_key:
+                return jsonify({'error': f'{config.llm_provider.upper()}_API_KEY environment variable is missing'}), 500
+        except Exception as e:
+            return jsonify({'error': f'Configuration error: {str(e)}'}), 500
 
         # Get candidate data
         candidate = db.get_candidate_by_id(candidate_id)
@@ -226,106 +347,33 @@ def generate_interview_questions(candidate_id):
         # Delete existing questions
         db.delete_interview_questions(candidate_id)
 
-        # Generate AI questions based on candidate's profile and job description
-        from groq import Groq
+        # Generate AI questions using the provider abstraction
+        from llm_providers import get_provider
         import json
 
-        client = Groq(api_key=os.getenv('GROQ_API_KEY'))
-
-        prompt = f"""You are an expert technical interviewer. Based on the following candidate profile and job description, generate 8-10 targeted interview questions.
-
-CANDIDATE PROFILE:
-Name: {candidate.get('name', 'Unknown')}
-Current Role: {candidate.get('current_role', 'Unknown')}
-Skills: {candidate.get('skills', 'Not specified')}
-Experience: {candidate.get('experience_years', 'Unknown')} years
-Education: {candidate.get('education', 'Not specified')}
-
-JOB DESCRIPTION:
-{candidate.get('job_description', 'Not specified')[:1000]}
-
-CANDIDATE TIER: {candidate.get('tier', 'Unknown')}
-EVALUATION SUMMARY: {candidate.get('summary', '')[:500]}
-
-Generate questions that:
-1. Test technical depth in their claimed skills
-2. Explore their achievements and impact mentioned in the resume
-3. Assess cultural fit and soft skills
-4. Include both behavioral and technical questions
-5. Are tailored to their tier level (harder questions for Tier A, foundational for Tier C)
-
-Return ONLY a valid JSON array with this exact structure:
-[
-  {{"question": "question text here", "category": "Technical|Behavioral|Cultural"}}
-]
-
-Ensure the JSON is valid and properly formatted."""
-
-        chat_completion = client.chat.completions.create(
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an expert technical interviewer. Always respond with valid JSON only."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            model="llama-3.3-70b-versatile",
-            temperature=0.5,
-            max_tokens=2048,
-            response_format={"type": "json_object"}
+        provider = get_provider()
+        questions_list = provider.generate_interview_questions(
+            candidate_profile=candidate,
+            job_description=candidate.get('job_description', 'Not specified'),
+            num_questions=10
         )
 
-        response_text = chat_completion.choices[0].message.content
+        # Save questions to database
+        saved_questions = []
+        for q in questions_list:
+            if isinstance(q, dict) and 'question' in q:
+                category = q.get('category', 'General')
+                question_id = db.save_interview_question(candidate_id, q['question'], category)
+                if question_id:
+                    saved_questions.append({
+                        'id': question_id,
+                        'candidate_id': candidate_id,
+                        'question': q['question'],
+                        'category': category,
+                        'created_at': None
+                    })
 
-        # Parse the response
-        try:
-            questions_data = json.loads(response_text)
-
-            # Handle different response formats
-            if isinstance(questions_data, list):
-                questions_list = questions_data
-            elif isinstance(questions_data, dict) and 'questions' in questions_data:
-                questions_list = questions_data['questions']
-            else:
-                questions_list = []
-
-            # Save questions to database
-            saved_questions = []
-            for q in questions_list:
-                if isinstance(q, dict) and 'question' in q:
-                    category = q.get('category', 'General')
-                    question_id = db.save_interview_question(candidate_id, q['question'], category)
-                    if question_id:
-                        saved_questions.append({
-                            'id': question_id,
-                            'candidate_id': candidate_id,
-                            'question': q['question'],
-                            'category': category,
-                            'created_at': None
-                        })
-
-            return jsonify({'questions': saved_questions}), 200
-
-        except json.JSONDecodeError as e:
-            print(f"JSON decode error: {e}")
-            print(f"Response text: {response_text}")
-            # Fallback: create generic questions
-            fallback_questions = [
-                {"question": "Can you walk me through your most challenging technical project?", "category": "Technical"},
-                {"question": "Describe a time you had to learn a new technology quickly. How did you approach it?", "category": "Behavioral"},
-                {"question": "What do you consider your biggest professional achievement?", "category": "Behavioral"},
-                {"question": "How do you handle disagreements with team members on technical decisions?", "category": "Cultural"},
-            ]
-            for q in fallback_questions:
-                question_id = db.save_interview_question(candidate_id, q['question'], q['category'])
-                q['id'] = question_id
-                q['candidate_id'] = candidate_id
-                q['created_at'] = None
-
-            return jsonify({'questions': fallback_questions}), 200
+        return jsonify({'questions': saved_questions}), 200
 
     except Exception as e:
         print(f"Error generating interview questions: {e}")
@@ -568,6 +616,7 @@ def get_analytics():
         return jsonify({'error': f'Failed to fetch analytics: {str(e)}'}), 500
 
 @app.route('/api/jobs/generate-ai', methods=['POST'])
+@rate_limit(requests=5, window=60)  # 5 job generations per minute
 def generate_ai_job_post():
     """
     Generate a job post using AI based on title and optional details.
@@ -591,9 +640,13 @@ def generate_ai_job_post():
         location = data.get('location')
         additional_info = data.get('additional_info')
 
-        # Check API key
-        if not os.getenv('GROQ_API_KEY'):
-            return jsonify({'error': 'GROQ_API_KEY environment variable is missing'}), 500
+        # Check API key using centralized config
+        try:
+            config = get_config()
+            if not config.llm.api_key:
+                return jsonify({'error': f'{config.llm_provider.upper()}_API_KEY environment variable is missing'}), 500
+        except Exception as e:
+            return jsonify({'error': f'Configuration error: {str(e)}'}), 500
 
         # Generate job post using AI
         generated = generate_job_post(
@@ -611,6 +664,434 @@ def generate_ai_job_post():
         return jsonify({'error': str(e)}), 400
     except Exception as e:
         return jsonify({'error': f'Failed to generate job post: {str(e)}'}), 500
+
+@app.route('/api/analytics/skill-gap', methods=['POST'])
+def analyze_skill_gap():
+    """
+    Analyze skill gaps in the candidate pool for a given job.
+
+    This feature helps hiring managers understand which skills are
+    missing from their candidate pool and provides recommendations
+    for addressing these gaps.
+
+    Expected JSON body:
+    - job_skills: list of strings (required) - skills required for the position
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            raise ValidationError('Request body is required')
+
+        job_skills = data.get('job_skills')
+
+        if not job_skills or not isinstance(job_skills, list):
+            raise ValidationError('job_skills must be a non-empty list')
+
+        if len(job_skills) < 1:
+            raise ValidationError('At least one skill is required')
+
+        logger.info(f"Analyzing skill gap for {len(job_skills)} skills")
+
+        cursor = db.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        # Get all candidates with their skills
+        cursor.execute("""
+            SELECT id, name, skills, tier
+            FROM candidates
+            WHERE skills IS NOT NULL AND skills != ''
+            ORDER BY tier
+        """)
+        candidates = cursor.fetchall()
+        cursor.close()
+
+        if not candidates:
+            return jsonify({
+                'missing_skills': job_skills,
+                'coverage_percentage': 0.0,
+                'candidate_count': 0,
+                'recommendations': [
+                    'No candidates found in database. Start by uploading resumes.',
+                ]
+            }), 200
+
+        # Analyze skill coverage
+        job_skills_lower = [s.lower().strip() for s in job_skills]
+        found_skills = set()
+        skill_to_candidates = {skill: [] for skill in job_skills_lower}
+
+        for candidate in candidates:
+            candidate_skills = candidate.get('skills', '').lower()
+            for skill in job_skills_lower:
+                # Check if skill is mentioned in candidate's skills
+                if skill in candidate_skills:
+                    found_skills.add(skill)
+                    skill_to_candidates[skill].append(candidate.get('name', 'Unknown'))
+
+        missing_skills = [s for s in job_skills_lower if s not in found_skills]
+        coverage_percentage = (len(found_skills) / len(job_skills_lower)) * 100
+
+        # Generate recommendations
+        recommendations = []
+        if coverage_percentage < 50:
+            recommendations.append(
+                f"Low skill coverage ({coverage_percentage:.1f}%). Consider targeting "
+                f"recruitment efforts towards candidates with these missing skills."
+            )
+        elif coverage_percentage < 80:
+            recommendations.append(
+                f"Moderate skill coverage ({coverage_percentage:.1f}%). Some skills gaps exist."
+            )
+        else:
+            recommendations.append(
+                f"Good skill coverage ({coverage_percentage:.1f}%). Candidate pool has most required skills."
+            )
+
+        if missing_skills:
+            recommendations.append(
+                f"Missing skills: {', '.join(missing_skills)}. "
+                f"Consider sourcing candidates with expertise in these areas."
+            )
+
+        # Add specific skill sourcing recommendations
+        for skill in missing_skills[:3]:  # Limit to top 3
+            recommendations.append(
+                f"Consider posting job ads on platforms specializing in {skill} talent, "
+                f"or reach out to professional communities for this skill."
+            )
+
+        return jsonify({
+            'missing_skills': missing_skills,
+            'coverage_percentage': round(coverage_percentage, 1),
+            'candidate_count': len(candidates),
+            'found_skills': list(found_skills),
+            'recommendations': recommendations
+        }), 200
+
+    except ValidationError as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Failed to analyze skill gap: {e}")
+        raise
+
+@app.route('/api/candidates/ranking', methods=['GET'])
+def get_candidates_ranking():
+    """
+    Get candidates ranked by their match score (leaderboard).
+
+    Query params:
+    - limit: number of results (default: 20)
+    - tier: filter by tier (optional)
+    - sort_by: sorting method (default: 'overall_score')
+      Options: 'overall_score', 'exact_match', 'similarity_match', 'achievement_impact', 'ownership'
+    - order: sort order (default: 'desc')
+      Options: 'asc', 'desc'
+
+    Returns a ranked list of candidates with their positions and scores.
+    """
+    try:
+        limit = int(request.args.get('limit', 20))
+        tier = request.args.get('tier')
+        sort_by = request.args.get('sort_by', 'overall_score')
+        order = request.args.get('order', 'desc')
+
+        # Validate sort_by parameter
+        valid_sort_options = [
+            'overall_score', 'exact_match', 'similarity_match',
+            'achievement_impact', 'ownership'
+        ]
+        if sort_by not in valid_sort_options:
+            return jsonify({
+                'error': f'Invalid sort_by option. Must be one of: {", ".join(valid_sort_options)}'
+            }), 400
+
+        # Validate order parameter
+        if order not in ['asc', 'desc']:
+            return jsonify({'error': 'Invalid order option. Must be "asc" or "desc"'}), 400
+
+        # Get candidates with their scores
+        cursor = db.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        # Build query based on tier filter
+        base_query = """
+            SELECT
+                id, name, email, phone, location, skills, education,
+                current_role, experience_years, tier, summary,
+                exact_match_score, similarity_match_score,
+                achievement_impact_score, ownership_score,
+                resume_filename, created_at
+            FROM candidates
+        """
+        params = []
+
+        if tier:
+            base_query += " WHERE tier = %s"
+            params.append(tier)
+
+        # Execute query
+        cursor.execute(base_query, params)
+        candidates = cursor.fetchall()
+        cursor.close()
+
+        # Calculate overall score for each candidate
+        ranked_candidates = []
+        for candidate in candidates:
+            scores = [
+                candidate.get('exact_match_score', 0) or 0,
+                candidate.get('similarity_match_score', 0) or 0,
+                candidate.get('achievement_impact_score', 0) or 0,
+                candidate.get('ownership_score', 0) or 0
+            ]
+            # Filter out any None or invalid values
+            valid_scores = [s for s in scores if s is not None and isinstance(s, (int, float))]
+            overall_score = sum(valid_scores) / len(valid_scores) if valid_scores else 0
+
+            ranked_candidates.append({
+                'id': candidate['id'],
+                'name': candidate.get('name', 'Unknown'),
+                'email': candidate.get('email'),
+                'current_role': candidate.get('current_role'),
+                'location': candidate.get('location'),
+                'tier': candidate.get('tier'),
+                'overall_score': round(overall_score, 2),
+                'exact_match_score': candidate.get('exact_match_score', 0) or 0,
+                'similarity_match_score': candidate.get('similarity_match_score', 0) or 0,
+                'achievement_impact_score': candidate.get('achievement_impact_score', 0) or 0,
+                'ownership_score': candidate.get('ownership_score', 0) or 0,
+                'resume_filename': candidate.get('resume_filename'),
+                'created_at': candidate.get('created_at').isoformat() if candidate.get('created_at') else None
+            })
+
+        # Sort candidates based on sort_by parameter
+        reverse = (order == 'desc')
+        ranked_candidates.sort(key=lambda x: x.get(sort_by, 0), reverse=reverse)
+
+        # Apply limit
+        ranked_candidates = ranked_candidates[:limit]
+
+        # Assign rankings
+        for idx, candidate in enumerate(ranked_candidates, 1):
+            candidate['rank'] = idx
+
+        # Calculate statistics
+        if ranked_candidates:
+            avg_scores = {
+                'overall_score': round(sum(c['overall_score'] for c in ranked_candidates) / len(ranked_candidates), 2),
+                'exact_match': round(sum(c['exact_match_score'] for c in ranked_candidates) / len(ranked_candidates), 2),
+                'similarity_match': round(sum(c['similarity_match_score'] for c in ranked_candidates) / len(ranked_candidates), 2),
+                'achievement_impact': round(sum(c['achievement_impact_score'] for c in ranked_candidates) / len(ranked_candidates), 2),
+                'ownership': round(sum(c['ownership_score'] for c in ranked_candidates) / len(ranked_candidates), 2),
+            }
+        else:
+            avg_scores = {
+                'overall_score': 0,
+                'exact_match': 0,
+                'similarity_match': 0,
+                'achievement_impact': 0,
+                'ownership': 0,
+            }
+
+        return jsonify({
+            'ranked_candidates': ranked_candidates,
+            'count': len(ranked_candidates),
+            'statistics': avg_scores,
+            'filters': {
+                'tier': tier,
+                'sort_by': sort_by,
+                'order': order
+            }
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Failed to get candidates ranking: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to get candidates ranking: {str(e)}'}), 500
+
+@app.route('/api/resume/rewrite', methods=['POST'])
+@rate_limit(requests=5, window=60)  # 5 rewrites per minute
+def rewrite_resume():
+    """
+    Rewrite a resume to better match a job description.
+
+    This endpoint helps candidates optimize their resume for a specific
+    job by providing AI-powered suggestions for improvements.
+
+    Expected JSON body:
+    - resume_text: string (required) - Original resume text
+    - job_description: string (required) - Target job description
+    - job_title: string (required) - Target job title
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'Request body is required'}), 400
+
+        resume_text = data.get('resume_text')
+        job_description = data.get('job_description')
+        job_title = data.get('job_title')
+
+        if not resume_text or not job_description or not job_title:
+            return jsonify({
+                'error': 'resume_text, job_description, and job_title are required'
+            }), 400
+
+        # Check API key using centralized config
+        try:
+            config = get_config()
+            if not config.llm.api_key:
+                return jsonify({
+                    'error': f'{config.llm_provider.upper()}_API_KEY environment variable is missing'
+                }), 500
+        except Exception as e:
+            return jsonify({'error': f'Configuration error: {str(e)}'}), 500
+
+        # Phase 3: Input sanitization
+        if SANITIZATION_ENABLED:
+            try:
+                job_description = sanitize_job_description(job_description)
+                resume_text = sanitize_resume_text(resume_text)
+                logger.info("Input sanitization completed successfully for resume rewrite")
+            except ValueError as sanitization_error:
+                logger.warning(f"Input sanitization failed: {sanitization_error}")
+                return jsonify({
+                    'error': f'Input validation failed: {str(sanitization_error)}',
+                    'code': 'SANITIZATION_ERROR'
+                }), 400
+
+        # Generate resume rewrite using the provider abstraction
+        from llm_providers import get_provider
+
+        provider = get_provider()
+        result = provider.rewrite_resume_for_job(
+            resume_text=resume_text,
+            job_description=job_description,
+            job_title=job_title
+        )
+
+        return jsonify({
+            'improved_summary': result.get('improved_summary', ''),
+            'suggested_bullets': result.get('suggested_bullets', []),
+            'skills_to_highlight': result.get('skills_to_highlight', []),
+            'keywords_to_add': result.get('keywords_to_add', []),
+            'cover_letter_suggestion': result.get('cover_letter_suggestion', '')
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error rewriting resume: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to rewrite resume: {str(e)}'}), 500
+
+
+# =============================================================================
+# Phase 7: Fairness Checker API Endpoints
+# =============================================================================
+
+@app.route('/api/fairness/audit', methods=['GET'])
+def run_fairness_audit():
+    """
+    Run a fairness audit on the candidate pool.
+
+    Query params:
+    - job_id: Optional job ID to filter candidates
+    - time_window: Optional time window in days (e.g., 30 for last 30 days)
+
+    Returns a complete fairness audit report with bias alerts and recommendations.
+    """
+    try:
+        job_id = request.args.get('job_id')
+        time_window = request.args.get('time_window')
+
+        if time_window:
+            try:
+                time_window = int(time_window)
+            except ValueError:
+                return jsonify({'error': 'time_window must be an integer'}), 400
+
+        from fairness_checker import fairness_checker
+
+        audit = fairness_checker.analyze_candidate_pool(
+            job_id=int(job_id) if job_id else None,
+            time_window=time_window,
+            request_id=get_request_id()
+        )
+
+        return jsonify(audit.to_dict()), 200
+
+    except Exception as e:
+        logger.error(f"Failed to run fairness audit: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to run fairness audit: {str(e)}'}), 500
+
+
+@app.route('/api/fairness/check-job', methods=['POST'])
+def check_job_fairness():
+    """
+    Check a job description for potential bias indicators.
+
+    Expected JSON body:
+    - job_description: string (required)
+
+    Returns analysis with bias indicators and recommendations.
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'Request body is required'}), 400
+
+        job_description = data.get('job_description')
+
+        if not job_description:
+            return jsonify({'error': 'job_description is required'}), 400
+
+        from fairness_checker import fairness_checker
+
+        result = fairness_checker.check_job_description_fairness(
+            job_description=job_description,
+            request_id=get_request_id()
+        )
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        logger.error(f"Failed to check job fairness: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to check job fairness: {str(e)}'}), 500
+
+
+@app.route('/api/fairness/statistics', methods=['GET'])
+def get_fairness_statistics():
+    """
+    Get fairness statistics for the candidate pool.
+
+    Returns demographic distribution and bias metrics.
+    """
+    try:
+        from fairness_checker import fairness_checker
+
+        # Run a quick audit to get demographics
+        audit = fairness_checker.analyze_candidate_pool(
+            request_id=get_request_id()
+        )
+
+        return jsonify({
+            'demographics': audit.demographics,
+            'fairness_scores': audit.fairness_scores,
+            'overall_fairness_score': audit.overall_fairness_score,
+            'candidate_pool_size': audit.candidate_pool_size,
+            'passed_threshold': audit.passed_threshold,
+            'alert_count': len(audit.alerts)
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Failed to get fairness statistics: {e}")
+        return jsonify({'error': f'Failed to get fairness statistics: {str(e)}'}), 500
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
