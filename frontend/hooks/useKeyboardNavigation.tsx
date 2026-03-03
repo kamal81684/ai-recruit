@@ -13,7 +13,7 @@
 
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 
 // =============================================================================
 // Focus Trap Hook
@@ -393,7 +393,7 @@ export function useModifierKey() {
  */
 export function useIsTyping() {
   const [isTyping, setIsTyping] = useState(false);
-  const timeoutRef = useRef<NodeJS.Timeout>();
+  const timeoutRef = useRef<NodeJS.Timeout>(undefined);
 
   useEffect(() => {
     const handleKeyDown = () => {

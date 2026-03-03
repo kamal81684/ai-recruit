@@ -269,16 +269,4 @@ export interface ColumnConfig {
   width?: string;
 }
 
-// =============================================================================
-// Export all types as a namespace for cleaner imports
-// =============================================================================
 
-export const Types = {
-  Candidate,
-  JobPost,
-  InterviewQuestion,
-  Statistics,
-  AnalyticsData,
-  CandidateEvaluation,
-  EvaluationScore,
-} as const;

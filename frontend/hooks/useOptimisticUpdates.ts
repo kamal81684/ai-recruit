@@ -208,7 +208,7 @@ export function useOptimisticUpdates<T extends Record<string, any>>(
   ) => {
     // Generate temporary ID
     const tempId = `temp-${Date.now()}`;
-    const optimisticItem = { ...newItem, id: tempId } as T;
+    const optimisticItem = { ...newItem, id: tempId } as unknown as T;
 
     // Create optimistic action
     const actionId = `add-${tempId}`;

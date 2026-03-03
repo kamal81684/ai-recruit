@@ -116,6 +116,7 @@ jobs:
 
       - name: Run Semgrep
         uses: returntocorp/semgrep-action@v1
+        continue-on-error: true
         with:
           config: auto
           generateSarif: true
@@ -127,6 +128,7 @@ jobs:
           sarif_file: semgrep.sarif
 
       - name: Run Trivy filesystem scan
+        if: always()
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'fs'

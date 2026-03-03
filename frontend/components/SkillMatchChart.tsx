@@ -78,7 +78,7 @@ export default function SkillMatchChart({
         pointLabels: {
           font: {
             size: 12,
-            weight: "600",
+            weight: 600 as const,
             family: "'Inter', sans-serif",
           },
           color: "#475569",
@@ -103,7 +103,7 @@ export default function SkillMatchChart({
         backgroundColor: "rgba(15, 23, 42, 0.9)",
         titleFont: {
           size: 13,
-          weight: "600",
+          weight: 600 as const,
         },
         bodyFont: {
           size: 12,

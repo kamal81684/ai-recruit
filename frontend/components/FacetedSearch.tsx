@@ -340,7 +340,7 @@ export function FacetedSearch({
                       close
                     </button>
                   </span>
-                ))}
+                )}
               </div>
             </div>
           )}

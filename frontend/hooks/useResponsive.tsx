@@ -13,7 +13,7 @@
 
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, type ReactNode } from "react";
 
 // =============================================================================
 // Breakpoints (matching Tailwind CSS defaults)

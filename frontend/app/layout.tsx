@@ -74,53 +74,6 @@ export default function RootLayout({
           </ThemeProvider>
         </ErrorBoundary>
 
-        {/* Skip to content link (always available) */}
-        <style jsx global>{`
-          .skip-to-content {
-            position: absolute;
-            left: -9999px;
-            z-index: 9999;
-            padding: 1rem 2rem;
-            background: var(--color-primary, #135bec);
-            color: white;
-            text-decoration: none;
-            border-radius: 0.5rem;
-            font-weight: 600;
-          }
-          .skip-to-content:focus {
-            left: 1rem;
-            top: 1rem;
-          }
-
-          /* Ensure focus states are visible */
-          *:focus-visible {
-            outline: 2px solid var(--color-primary, #135bec);
-            outline-offset: 2px;
-          }
-
-          /* Smooth scrolling */
-          html {
-            scroll-behavior: smooth;
-          }
-
-          /* High contrast mode support */
-          @media (prefers-contrast: high) {
-            :root {
-              --color-primary: #0a4adc;
-            }
-          }
-
-          /* Reduced motion support */
-          @media (prefers-reduced-motion: reduce) {
-            *,
-            *::before,
-            *::after {
-              animation-duration: 0.01ms !important;
-              animation-iteration-count: 1 !important;
-              transition-duration: 0.01ms !important;
-            }
-          }
-        `}</style>
       </body>
     </html>
   );
