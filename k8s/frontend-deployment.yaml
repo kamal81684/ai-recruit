@@ -1,0 +1,233 @@
+# Frontend Deployment Manifests for AI Resume Shortlisting Assistant
+#
+# Contributor: shubham21155102
+
+# =============================================================================
+# Frontend ConfigMap
+# =============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: ai-recruit
+data:
+  NEXT_PUBLIC_API_URL: "http://backend:5001"
+  NODE_ENV: "production"
+
+---
+# =============================================================================
+# Frontend Deployment
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: ai-recruit
+  labels:
+    app: ai-recruit
+    component: frontend
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: ai-recruit
+      component: frontend
+  template:
+    metadata:
+      labels:
+        app: ai-recruit
+        component: frontend
+      annotations:
+        prometheus.io/scrape: "false"
+    spec:
+      containers:
+      - name: frontend
+        image: ghcr.io/kamal81684/ai-recruit-frontend:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 3000
+          protocol: TCP
+        env:
+        - name: NEXT_PUBLIC_API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: frontend-config
+              key: NEXT_PUBLIC_API_URL
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: frontend-config
+              key: NODE_ENV
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          readOnlyRootFilesystem: false
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+
+---
+# =============================================================================
+# Frontend Service
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: ai-recruit
+  labels:
+    app: ai-recruit
+    component: frontend
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 3000
+    targetPort: http
+    protocol: TCP
+  selector:
+    app: ai-recruit
+    component: frontend
+
+---
+# =============================================================================
+# Frontend HorizontalPodAutoscaler
+# =============================================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend-hpa
+  namespace: ai-recruit
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+---
+# =============================================================================
+# Frontend PodDisruptionBudget
+# =============================================================================
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend-pdb
+  namespace: ai-recruit
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: ai-recruit
+      component: frontend
+
+---
+# =============================================================================
+# Ingress Configuration
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-recruit-ingress
+  namespace: ai-recruit
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+spec:
+  tls:
+  - hosts:
+    - ai-recruit.example.com
+    - www.ai-recruit.example.com
+    secretName: ai-recruit-tls
+  rules:
+  - host: ai-recruit.example.com
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 5001
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 3000
+  - host: www.ai-recruit.example.com
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 5001
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 3000

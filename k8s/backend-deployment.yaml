@@ -1,0 +1,283 @@
+# Kubernetes Deployment Manifests for AI Resume Shortlisting Assistant
+#
+# These manifests provide production-grade deployment configuration including:
+# - Deployments with replica management
+# - Services for internal/external communication
+# - ConfigMaps and Secrets for configuration
+# - Horizontal Pod Autoscaling
+# - Pod Disruption Budgets
+# - Resource limits and requests
+#
+# Contributor: shubham21155102
+#
+# Usage:
+#   kubectl apply -f k8s/
+#
+# Prerequisites:
+#   - Kubernetes cluster with Ingress controller
+#   - PostgreSQL database (external or via StatefulSet)
+#   - Existing secrets for API keys
+
+# =============================================================================
+# Namespace
+# =============================================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-recruit
+  labels:
+    name: ai-recruit
+    environment: production
+
+---
+# =============================================================================
+# Backend ConfigMap
+# =============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: ai-recruit
+data:
+  APP_NAME: "AI Resume Shortlisting Assistant"
+  ENVIRONMENT: "production"
+  DEBUG: "false"
+  HOST: "0.0.0.0"
+  PORT: "5001"
+  LLM_PROVIDER: "groq"
+  LLM_MODEL: "llama-3.3-70b-versatile"
+  LLM_TEMPERATURE: "0.0"
+  LLM_MAX_TOKENS: "2048"
+  DB_POOL_SIZE: "10"
+  DB_MAX_OVERFLOW: "20"
+
+---
+# =============================================================================
+# Backend Secret (API Keys)
+# =============================================================================
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backend-secrets
+  namespace: ai-recruit
+type: Opaque
+stringData:
+  # Base64 encode these values or use external secret management
+  GROQ_API_KEY: "your-groq-api-key-here"
+  OPENAI_API_KEY: "your-openai-api-key-here"
+  ANTHROPIC_API_KEY: "your-anthropic-api-key-here"
+  DATABASE_URL: "postgresql://user:password@postgres:5432/ai_recruit"
+
+---
+# =============================================================================
+# Backend Deployment
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: ai-recruit
+  labels:
+    app: ai-recruit
+    component: backend
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: ai-recruit
+      component: backend
+  template:
+    metadata:
+      labels:
+        app: ai-recruit
+        component: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5001"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: backend
+        image: ghcr.io/kamal81684/ai-recruit-backend:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 5001
+          protocol: TCP
+        env:
+        - name: APP_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: APP_NAME
+        - name: ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: ENVIRONMENT
+        - name: DEBUG
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: DEBUG
+        - name: HOST
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: HOST
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: PORT
+        - name: LLM_PROVIDER
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: LLM_PROVIDER
+        - name: GROQ_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: backend-secrets
+              key: GROQ_API_KEY
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: backend-secrets
+              key: OPENAI_API_KEY
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: backend-secrets
+              key: DATABASE_URL
+        - name: CORS_ORIGINS
+          value: "https://ai-recruit.example.com,https://www.ai-recruit.example.com"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          readOnlyRootFilesystem: false
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+
+---
+# =============================================================================
+# Backend Service
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: ai-recruit
+  labels:
+    app: ai-recruit
+    component: backend
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 5001
+    targetPort: http
+    protocol: TCP
+  selector:
+    app: ai-recruit
+    component: backend
+
+---
+# =============================================================================
+# Backend HorizontalPodAutoscaler
+# =============================================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+  namespace: ai-recruit
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 30
+      - type: Pods
+        value: 2
+        periodSeconds: 30
+      selectPolicy: Max
+
+---
+# =============================================================================
+# Backend PodDisruptionBudget
+# =============================================================================
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+  namespace: ai-recruit
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: ai-recruit
+      component: backend
