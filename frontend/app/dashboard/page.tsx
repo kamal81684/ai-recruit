@@ -24,7 +24,6 @@ interface AnalyticsData {
     created_at: string;
   }>;
 }
-
 export default function DashboardPage() {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
