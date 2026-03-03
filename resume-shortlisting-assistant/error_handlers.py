@@ -76,6 +76,13 @@ class DatabaseError(APIError):
         super().__init__(message, 500, "DATABASE_ERROR", details)
 
 
+class BusinessLogicError(APIError):
+    """Business logic error (422)."""
+
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+        super().__init__(message, 422, "BUSINESS_LOGIC_ERROR", details)
+
+
 def get_request_id() -> str:
     """Get or generate request ID."""
     if request and request.headers:
