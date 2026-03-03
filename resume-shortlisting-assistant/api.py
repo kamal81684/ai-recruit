@@ -11,11 +11,14 @@ Architecture improvements:
 - Phase 3: Retry mechanisms with exponential backoff
 - Phase 3: Dead Letter Queue for failed requests
 - Phase 3: Input sanitization for prompt injection protection
+- Phase 6: API versioning support (/api/v1/)
+- Phase 6: Enterprise-grade security headers
+- Phase 6: PII redaction for enhanced privacy
 
 Contributor: shubham21155102
 """
 
-from flask import Flask, request, jsonify, make_response
+from flask import Flask, request, jsonify, make_response, g
 from flask_cors import CORS
 from engine import extract_text_from_pdf, evaluate_resume, generate_job_post
 from rate_limiter import rate_limit, ENDPOINT_LIMITS
@@ -35,6 +38,17 @@ import os
 import psycopg2.extras
 from io import BytesIO
 import logging
+
+# Phase 6: Import security headers and API versioning modules
+try:
+    from security_headers import register_security_headers, setup_csp_reporting
+    from api_versioning import register_version_redirects, add_version_headers, API_VERSIONS
+    from pii_redaction import PIIRedactor, sanitize_for_logging
+    SECURITY_ENABLED = True
+except ImportError as e:
+    SECURITY_ENABLED = False
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Phase 6 security modules not available: {e}")
 
 # Import input sanitization module (Phase 3)
 try:
@@ -72,6 +86,15 @@ except Exception as e:
 register_error_handlers(app)
 init_request_tracking(app)
 
+# Phase 6: Register security headers middleware
+if SECURITY_ENABLED:
+    environment = os.environ.get('FLASK_ENV', 'production')
+    register_security_headers(app, environment=environment)
+    setup_csp_reporting(app)
+    # Register version redirects and info endpoint
+    register_version_redirects(app)
+    logger.info("Phase 6 security features enabled: security headers, API versioning")
+
 # Add cache control headers to all responses
 @app.after_request
 def add_headers(response):
@@ -79,6 +102,11 @@ def add_headers(response):
     response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
+
+    # Phase 6: Add API version headers to responses
+    if SECURITY_ENABLED and hasattr(g, 'api_version'):
+        add_version_headers(response, g.api_version)
+
     return response
 
 # Initialize database on startup
@@ -87,8 +115,23 @@ if not init_database():
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
-    return jsonify({'status': 'ok', 'message': 'API is running'})
+    """Health check endpoint with version information"""
+    response_data = {
+        'status': 'ok',
+        'message': 'API is running',
+        'version': '1.0.0',
+        'api_version': 'v1'
+    }
+
+    # Add security features status
+    if SECURITY_ENABLED:
+        response_data['security_features'] = {
+            'security_headers': 'enabled',
+            'api_versioning': 'enabled',
+            'pii_redaction': 'enabled'
+        }
+
+    return jsonify(response_data)
 
 @app.route('/api/evaluate', methods=['POST'])
 @rate_limit(requests=10, window=60)  # 10 evaluations per minute
