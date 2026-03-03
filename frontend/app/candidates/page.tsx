@@ -1,6 +1,17 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
+
+// Dynamically import the leaderboard component
+const CandidateLeaderboard = dynamic(() => import("@/components/CandidateLeaderboard"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-64 flex items-center justify-center bg-slate-50 rounded-xl">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+    </div>
+  ),
+});
 
 interface Candidate {
   id: number;
@@ -40,6 +51,7 @@ export default function CandidatesPage() {
   const [statistics, setStatistics] = useState<Statistics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [activeTab, setActiveTab] = useState<"list" | "leaderboard">("list");
 
   useEffect(() => {
     fetchCandidates();
@@ -272,14 +284,34 @@ export default function CandidatesPage() {
             </div>
           </div>
 
-          {/* Candidate Queue Table */}
+          {/* View Tabs */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-6 border-b border-slate-200 flex items-center justify-between">
-              <h2 className="text-lg font-bold">Candidate Queue</h2>
               <div className="flex items-center gap-2">
-                <button className="px-3 py-1.5 text-xs font-semibold border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
-                  Filter
+                <button
+                  onClick={() => setActiveTab("list")}
+                  className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors flex items-center gap-2 ${
+                    activeTab === "list"
+                      ? "bg-primary text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-sm">list</span>
+                  List View
                 </button>
+                <button
+                  onClick={() => setActiveTab("leaderboard")}
+                  className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors flex items-center gap-2 ${
+                    activeTab === "leaderboard"
+                      ? "bg-primary text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-sm">leaderboard</span>
+                  Leaderboard
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
                 <button
                   onClick={() => window.location.reload()}
                   className="px-3 py-1.5 text-xs font-semibold border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
@@ -289,101 +321,111 @@ export default function CandidatesPage() {
               </div>
             </div>
 
-            {loading ? (
-              <div className="p-12 text-center">
-                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                <p className="mt-4 text-slate-500">Loading candidates...</p>
-              </div>
-            ) : error ? (
-              <div className="p-12 text-center">
-                <span className="material-symbols-outlined text-4xl text-slate-300">error</span>
-                <p className="mt-4 text-slate-500">{error}</p>
-                <button
-                  onClick={fetchCandidates}
-                  className="mt-4 px-4 py-2 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors"
-                >
-                  Retry
-                </button>
-              </div>
-            ) : candidates.length === 0 ? (
-              <div className="p-12 text-center">
-                <span className="material-symbols-outlined text-4xl text-slate-300">group_off</span>
-                <p className="mt-4 text-slate-500">No candidates yet</p>
-                <a
-                  href="/"
-                  className="inline-block mt-4 px-4 py-2 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors"
-                >
-                  Add First Candidate
-                </a>
-              </div>
-            ) : (
+            {activeTab === "list" ? (
               <>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead className="bg-slate-50">
-                      <tr>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Name</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Role</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Location</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Tier</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Match Score</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {candidates.map((candidate) => {
-                        console.log("Rendering candidate:", candidate);
-                        return (
-                        <tr key={candidate.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-6 py-4">
-                            <div>
-                              <p className="text-sm font-bold">{candidate.name || "Unknown"}</p>
-                              {candidate.email && (
-                                <p className="text-xs text-slate-500">{candidate.email}</p>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className="text-sm font-medium text-slate-700">
-                              {candidate.current_role || candidate.resume_filename}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className="text-sm text-slate-500">
-                              {candidate.location || "N/A"}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${getTierColor(candidate.tier)}`}>
-                              {candidate.tier}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-3">
-                              <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                <div className="h-full bg-primary" style={{ width: `${getAverageScore(candidate)}%` }}></div>
-                              </div>
-                              <span className="text-sm font-bold">{getAverageScore(candidate)}</span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <button
-                              onClick={() => window.location.href = `/candidates/${candidate.id}`}
-                              className="text-primary text-sm font-bold hover:underline"
-                            >
-                              View Profile
-                            </button>
-                          </td>
-                        </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="p-4 border-t border-slate-200 flex items-center justify-between">
-                  <p className="text-xs text-slate-500">Showing {candidates.length} candidates</p>
-                </div>
+                {/* Candidate Queue Table */}
+                {loading ? (
+                  <div className="p-12 text-center">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                    <p className="mt-4 text-slate-500">Loading candidates...</p>
+                  </div>
+                ) : error ? (
+                  <div className="p-12 text-center">
+                    <span className="material-symbols-outlined text-4xl text-slate-300">error</span>
+                    <p className="mt-4 text-slate-500">{error}</p>
+                    <button
+                      onClick={fetchCandidates}
+                      className="mt-4 px-4 py-2 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : candidates.length === 0 ? (
+                  <div className="p-12 text-center">
+                    <span className="material-symbols-outlined text-4xl text-slate-300">group_off</span>
+                    <p className="mt-4 text-slate-500">No candidates yet</p>
+                    <a
+                      href="/"
+                      className="inline-block mt-4 px-4 py-2 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors"
+                    >
+                      Add First Candidate
+                    </a>
+                  </div>
+                ) : (
+                  <>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Name</th>
+                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Role</th>
+                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Location</th>
+                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Tier</th>
+                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Match Score</th>
+                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {candidates.map((candidate) => {
+                            console.log("Rendering candidate:", candidate);
+                            return (
+                            <tr key={candidate.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="px-6 py-4">
+                                <div>
+                                  <p className="text-sm font-bold">{candidate.name || "Unknown"}</p>
+                                  {candidate.email && (
+                                    <p className="text-xs text-slate-500">{candidate.email}</p>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className="text-sm font-medium text-slate-700">
+                                  {candidate.current_role || candidate.resume_filename}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className="text-sm text-slate-500">
+                                  {candidate.location || "N/A"}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${getTierColor(candidate.tier)}`}>
+                                  {candidate.tier}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                    <div className="h-full bg-primary" style={{ width: `${getAverageScore(candidate)}%` }}></div>
+                                  </div>
+                                  <span className="text-sm font-bold">{getAverageScore(candidate)}</span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <button
+                                  onClick={() => window.location.href = `/candidates/${candidate.id}`}
+                                  className="text-primary text-sm font-bold hover:underline"
+                                >
+                                  View Profile
+                                </button>
+                              </td>
+                            </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="p-4 border-t border-slate-200 flex items-center justify-between">
+                      <p className="text-xs text-slate-500">Showing {candidates.length} candidates</p>
+                    </div>
+                  </>
+                )}
               </>
+            ) : (
+              /* Leaderboard View */
+              <div className="p-6">
+                <CandidateLeaderboard />
+              </div>
             )}
           </div>
         </div>

@@ -1,6 +1,17 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
+
+// Dynamically import the chart component to avoid SSR issues
+const SkillMatchChart = dynamic(() => import("@/components/SkillMatchChart"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-[300px] flex items-center justify-center bg-slate-50 rounded-xl">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+    </div>
+  ),
+});
 
 interface EvaluationData {
   tier: string;
@@ -468,6 +479,53 @@ export default function Home() {
                           </p>
                         </div>
                       ))}
+                    </div>
+
+                    {/* Skill Match Radar Chart - New Visualization */}
+                    <div className="mb-12">
+                      <div className="flex items-center gap-3 mb-6">
+                        <h3 className="text-xl font-black text-slate-900 tracking-tight flex-1">
+                          Skill Match Visualization
+                        </h3>
+                        <div className="h-px bg-slate-200 flex-[2]"></div>
+                      </div>
+                      <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-3xl p-8 border border-slate-200 shadow-sm">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+                          <div className="order-2 lg:order-1">
+                            <p className="text-sm text-slate-600 mb-4 leading-relaxed">
+                              This radar chart provides a visual representation of the candidate&apos;s
+                              strengths across all evaluation dimensions. A larger, more balanced shape
+                              indicates a well-rounded candidate.
+                            </p>
+                            <div className="space-y-3">
+                              <div className="flex items-center justify-between text-sm">
+                                <span className="text-slate-600 font-medium">Overall Score</span>
+                                <span className="font-bold text-primary">
+                                  {Math.round((result.exact_match.score + result.similarity_match.score + result.achievement_impact.score + result.ownership.score) / 4)}/100
+                                </span>
+                              </div>
+                              <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-gradient-to-r from-primary to-blue-500 transition-all duration-1000"
+                                  style={{
+                                    width: `${Math.round((result.exact_match.score + result.similarity_match.score + result.achievement_impact.score + result.ownership.score) / 4)}%`
+                                  }}
+                                ></div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="order-1 lg:order-2 flex justify-center">
+                            <div className="w-full max-w-[320px]">
+                              <SkillMatchChart
+                                exactMatch={result.exact_match.score}
+                                similarityMatch={result.similarity_match.score}
+                                achievementImpact={result.achievement_impact.score}
+                                ownership={result.ownership.score}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
                     {/* Detailed Explanations */}
