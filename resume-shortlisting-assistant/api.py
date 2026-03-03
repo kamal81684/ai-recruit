@@ -984,6 +984,115 @@ def rewrite_resume():
         traceback.print_exc()
         return jsonify({'error': f'Failed to rewrite resume: {str(e)}'}), 500
 
+
+# =============================================================================
+# Phase 7: Fairness Checker API Endpoints
+# =============================================================================
+
+@app.route('/api/fairness/audit', methods=['GET'])
+def run_fairness_audit():
+    """
+    Run a fairness audit on the candidate pool.
+
+    Query params:
+    - job_id: Optional job ID to filter candidates
+    - time_window: Optional time window in days (e.g., 30 for last 30 days)
+
+    Returns a complete fairness audit report with bias alerts and recommendations.
+    """
+    try:
+        job_id = request.args.get('job_id')
+        time_window = request.args.get('time_window')
+
+        if time_window:
+            try:
+                time_window = int(time_window)
+            except ValueError:
+                return jsonify({'error': 'time_window must be an integer'}), 400
+
+        from fairness_checker import fairness_checker
+
+        audit = fairness_checker.analyze_candidate_pool(
+            job_id=int(job_id) if job_id else None,
+            time_window=time_window,
+            request_id=get_request_id()
+        )
+
+        return jsonify(audit.to_dict()), 200
+
+    except Exception as e:
+        logger.error(f"Failed to run fairness audit: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to run fairness audit: {str(e)}'}), 500
+
+
+@app.route('/api/fairness/check-job', methods=['POST'])
+def check_job_fairness():
+    """
+    Check a job description for potential bias indicators.
+
+    Expected JSON body:
+    - job_description: string (required)
+
+    Returns analysis with bias indicators and recommendations.
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'Request body is required'}), 400
+
+        job_description = data.get('job_description')
+
+        if not job_description:
+            return jsonify({'error': 'job_description is required'}), 400
+
+        from fairness_checker import fairness_checker
+
+        result = fairness_checker.check_job_description_fairness(
+            job_description=job_description,
+            request_id=get_request_id()
+        )
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        logger.error(f"Failed to check job fairness: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to check job fairness: {str(e)}'}), 500
+
+
+@app.route('/api/fairness/statistics', methods=['GET'])
+def get_fairness_statistics():
+    """
+    Get fairness statistics for the candidate pool.
+
+    Returns demographic distribution and bias metrics.
+    """
+    try:
+        from fairness_checker import fairness_checker
+
+        # Run a quick audit to get demographics
+        audit = fairness_checker.analyze_candidate_pool(
+            request_id=get_request_id()
+        )
+
+        return jsonify({
+            'demographics': audit.demographics,
+            'fairness_scores': audit.fairness_scores,
+            'overall_fairness_score': audit.overall_fairness_score,
+            'candidate_pool_size': audit.candidate_pool_size,
+            'passed_threshold': audit.passed_threshold,
+            'alert_count': len(audit.alerts)
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Failed to get fairness statistics: {e}")
+        return jsonify({'error': f'Failed to get fairness statistics: {str(e)}'}), 500
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
     debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
